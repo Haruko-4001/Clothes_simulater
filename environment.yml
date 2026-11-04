@@ -1,0 +1,12 @@
+name: tryon
+channels:
+  - conda-forge
+dependencies:
+  - python=3.11
+  - numpy>=1.26
+  - pillow>=10.0
+  - pyyaml>=6.0
+  - pytest>=8.0
+  - pip
+  - pip:
+      - -e .

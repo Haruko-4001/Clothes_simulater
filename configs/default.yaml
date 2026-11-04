@@ -1,0 +1,80 @@
+# configs/default.yaml —— 代码内禁止硬编码第二份数值
+mode: mock                        # mock|real|hybrid
+hardware: rtx4090
+camera: {width: 1920, height: 1080, target_fps: 30}
+math:                            # §2 / 附录 B
+  gravity: [0.0, -9.81, 0.0]
+  dt: 0.033333                   # 1/30 s
+  world_up: Y
+  camera_forward: Z
+  rotation_repr: unit_quaternion
+framing:                         # §10.4
+  enabled: true
+  min_visible_keypoint_ratio: 0.70
+  max_occlusion_ratio: 0.35
+  reject_bbox_clipped: false     # 裁切→PARTIAL，不直接拒
+  allow_side_back: false         # 侧背必须走异步 3D
+  require_class: [tops, bottoms, one-pieces]
+  guide_on_partial: true
+  temporal_accumulate_frames: 30  # D12
+  contact_hold_s: 0.30
+physics:                         # §10.1
+  target_hz: 60
+  substeps: 4
+  dt: 0.016667
+  max_vertices: 6000
+  solver: stub_xpbd              # stub_xpbd|diffcloth|warp
+  xpbd_iters: 6
+  alpha_M: 0.02                  # Rayleigh
+  alpha_K: 0.01
+  energy_decay_gamma: 0.15
+  penetration_clip_m: 0.002
+  support_stiffness: 5000.0     # N/m, shoulder support (body-relative)
+  attach_stiffness: 20000.0     # N/m, hand attachment soft constraint
+  max_substep_delta_m: 0.05     # clamp per-substep displacement
+  energy_settle_j: 1.0e-3       # E_min for REBOUNDING → IDLE
+render: {backend: stub, scale: 1.0}   # scale<1 renders the mesh layer at reduced resolution
+keyframe:
+  max_queue: 2
+  stable_ms: 800                 # T_stable
+  fuse_frames: 6
+  min_interval_ms: 1000
+  epsilon_in: 0.015              # ε_in  (rad, 加权姿态差)
+  epsilon_out: 0.035             # ε_out > ε_in，迟滞
+  delta_pose: 0.12               # δ_pose，过期判据
+  alpha0: 0.55
+  tau_fuse_ms: 260
+  backend: stub                  # stub|fashn_vton_1_5|catvton|leffa|omnitry
+asset:
+  geometry: stub                 # stub|sewformer|instantmesh|garmentrec
+  material_prior: dictionary
+  offline_timeout_s: 300
+  back_confidence_threshold: 0.65   # τ_back
+  review_threshold: 0.55            # τ_review
+  g1_iou_threshold: 0.90            # §7 G1
+  g2: {silhouette_iou: 0.60, chamfer_px: 120.0, normal_error_rad: 0.60}
+  confidence_weights: {segmentation: 1.0, visible_geometry: 1.5, back_geometry: 1.0, topology: 1.0, material: 1.0}
+  mesh_resolution: [12, 9]          # [around, height] skeleton resolution (capped by physics.max_vertices)
+calibration:                     # §10.3
+  params: [youngs_modulus, damping, bending_stiffness, areal_density]
+  max_params_per_batch: 6
+  window_frames: 90
+  max_iter: 8
+  lambda_LM: 1.0e-3
+  delta_max: 0.35                # δ_max，马氏步长限幅
+  epsilon_J: 1.0e-4              # 灵敏度列阈值
+  epsilon_s: 0.02                # m
+  epsilon_a: 0.5                 # m/s²
+  rho_excitation: 3.0
+  kappa_max: 1.0e6               # cond(𝓘) 上限
+  commit_min_loss_drop: 0.15     # ε_L
+  epsilon_ade: 0.005             # m
+  predict_horizon_ms: 400        # H
+  max_interactions_before_degrade: 50
+  ablation: {disable_back_prior: false, disable_material_opt: false, disable_friction_opt: false}
+policy:
+  allow_nc_weights: false        # 生产必须 false
+  require_human_review_below: 0.55
+  reject_on: [transparent, multi_layer, extreme_occlusion, nonstandard_wear]
+hud: {show_material_state: true, show_confidence: true, show_degrade_notice: true,
+      show_framing: true, show_guide_text: true}

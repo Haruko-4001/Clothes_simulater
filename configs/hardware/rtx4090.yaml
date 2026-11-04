@@ -1,0 +1,3 @@
+# RTX 4090 档位（公开口径，需实测）
+physics: {max_vertices: 6000, target_hz: 60}
+camera: {width: 1920, height: 1080}

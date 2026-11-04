@@ -1,0 +1,10 @@
+# mock.yaml —— 全 stub；无 GPU / 网络 / 权重 / GUI
+mode: mock
+# Hidden synthetic ground truth used ONLY to generate mock observations for
+# pipeline C. It is never reported as a measured material.
+mock: {true_material_preset: denim}
+camera: {width: 1920, height: 1080, target_fps: 30}
+physics: {solver: stub_xpbd}
+render: {backend: stub}
+asset: {geometry: stub, material_prior: dictionary}
+keyframe: {backend: stub}

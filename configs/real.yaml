@@ -1,0 +1,6 @@
+# real.yaml —— 仅覆盖 mode 与各 backend 名；权重路径不得设为必需项
+mode: real
+physics: {solver: diffcloth}
+render: {backend: 3dgs}
+asset: {geometry: sewformer, material_prior: dictionary}
+keyframe: {backend: fashn_vton_1_5}

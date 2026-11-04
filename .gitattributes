@@ -1,0 +1,22 @@
+# 统一换行符：跨平台协作时以仓库内 LF 为准
+* text=auto eol=lf
+
+# 需要 LF 才能在 Linux/macOS 与容器内正确执行的脚本
+*.sh   text eol=lf
+Dockerfile text eol=lf
+Makefile   text eol=lf
+*.py   text eol=lf
+*.yaml text eol=lf
+*.yml  text eol=lf
+
+# Windows 批处理必须 CRLF
+*.cmd  text eol=crlf
+*.bat  text eol=crlf
+
+# 二进制资源不做换行符转换
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.gif  binary
+*.ico  binary
+*.pdf  binary
