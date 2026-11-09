@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import argparse
-import json
 from pathlib import Path
 import sys
 
@@ -16,7 +15,7 @@ if str(SRC) not in sys.path:
 from tryon.config import load_config  # noqa: E402
 from tryon.eval.report import build_report  # noqa: E402
 from tryon.factory import build  # noqa: E402
-from tryon.logging import setup_logging  # noqa: E402
+from tryon.logging import dumps_json, setup_logging  # noqa: E402
 
 
 def _load_image(path: str) -> np.ndarray:
@@ -55,14 +54,14 @@ def cmd_bootstrap(args: argparse.Namespace) -> int:
             "state": asset.material.state.value,
         },
     }
-    print(json.dumps(payload, ensure_ascii=False, indent=2))
+    print(dumps_json(payload, indent=2))
     return 0
 
 
 def cmd_eval_report(args: argparse.Namespace) -> int:
     cfg = load_config(args.mode, args.hardware, config_dir=args.config_dir)
     report = build_report(cfg, log_path=args.log, output_dir=args.out)
-    print(json.dumps(report, ensure_ascii=False, indent=2, default=str))
+    print(dumps_json(report, indent=2))
     return 0
 
 
@@ -100,7 +99,7 @@ def cmd_selfcheck(args: argparse.Namespace) -> int:
         ],
         "status": "OK",
     }
-    print(json.dumps(payload, ensure_ascii=False, indent=2))
+    print(dumps_json(payload, indent=2))
     return 0
 
 

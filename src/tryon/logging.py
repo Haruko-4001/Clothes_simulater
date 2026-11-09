@@ -41,6 +41,44 @@ def _json_default(obj: Any) -> Any:
     return str(obj)
 
 
+def to_json_safe(value: Any) -> Any:
+    """Return a value containing only types representable in strict JSON.
+
+    RFC 8259 has no literal for ``Infinity`` / ``NaN``, so non-finite floats
+    become ``None`` instead of leaking Python's non-standard extensions into
+    logs, stdout summaries and report files. Numpy scalars/arrays, Paths and
+    Enums are flattened to plain Python values.
+    """
+    if isinstance(value, dict):
+        return {str(k): to_json_safe(v) for k, v in value.items() if k != "_latencies"}
+    if isinstance(value, (list, tuple)):
+        return [to_json_safe(v) for v in value]
+    if isinstance(value, np.ndarray):
+        return to_json_safe(value.tolist())
+    if isinstance(value, (np.floating, np.integer)):
+        return to_json_safe(value.item())
+    if isinstance(value, float):
+        return value if math.isfinite(value) else None
+    if isinstance(value, Path):
+        return str(value)
+    if hasattr(value, "value") and hasattr(value, "name"):  # Enum
+        return to_json_safe(value.value)
+    return value
+
+
+def dumps_json(value: Any, **kwargs: Any) -> str:
+    """``json.dumps`` that always emits RFC 8259 compliant JSON.
+
+    ``allow_nan=False`` is a safety net: even if a non-finite value slips past
+    ``to_json_safe`` (e.g. a custom object's ``default`` hook), it raises
+    instead of silently writing invalid JSON.
+    """
+    kwargs.setdefault("default", _json_default)
+    return json.dumps(
+        to_json_safe(value), ensure_ascii=False, allow_nan=False, **kwargs
+    )
+
+
 class JsonlFrameLogger:
     """Writes one schema-complete record per displayed frame."""
 
@@ -124,7 +162,7 @@ class JsonlFrameLogger:
             raise RuntimeError("logger is closed")
         if math.isnan(float(record.get("pts_ms", 0.0))):
             raise ValueError("pts_ms is NaN")
-        self._fh.write(json.dumps(record, ensure_ascii=False, default=_json_default))
+        self._fh.write(dumps_json(record))
         self._fh.write("\n")
 
     def close(self) -> None:
@@ -141,15 +179,9 @@ class JsonlFrameLogger:
 
 
 def _sanitise(value: Any) -> Any:
-    if isinstance(value, dict):
-        return {str(k): _sanitise(v) for k, v in value.items() if k != "_latencies"}
-    if isinstance(value, (list, tuple)):
-        return [_sanitise(v) for v in value]
-    if isinstance(value, np.ndarray):
-        return value.tolist()
-    if isinstance(value, (np.floating, np.integer)):
-        return value.item()
-    return value
+    # Kept as a private alias: frame records go through the same strict-JSON
+    # conversion as every other serialised output.
+    return to_json_safe(value)
 
 
 def log_event(code: str, message: str = "", **fields: Any) -> None:
@@ -160,4 +192,12 @@ def utc_ms() -> float:
     return time.time() * 1000.0
 
 
-__all__ = ["logger", "setup_logging", "JsonlFrameLogger", "log_event", "utc_ms"]
+__all__ = [
+    "logger",
+    "setup_logging",
+    "JsonlFrameLogger",
+    "to_json_safe",
+    "dumps_json",
+    "log_event",
+    "utc_ms",
+]

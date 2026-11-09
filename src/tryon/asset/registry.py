@@ -17,6 +17,7 @@ from typing import Any
 import numpy as np
 
 from ..config import Config, REPO_ROOT
+from ..logging import dumps_json
 from ..types import Confidence, GarmentAsset, MaterialParams, MaterialState
 
 
@@ -64,9 +65,7 @@ class AssetRegistry:
             self._meta = {str(k): v for k, v in data.items() if isinstance(v, dict)}
 
     def flush(self) -> None:
-        self.path.write_text(
-            json.dumps(self._meta, ensure_ascii=False, indent=2), encoding="utf-8"
-        )
+        self.path.write_text(dumps_json(self._meta, indent=2), encoding="utf-8")
 
     # -- API ------------------------------------------------------------
     def register(self, asset: GarmentAsset) -> GarmentAsset:

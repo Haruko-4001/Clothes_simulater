@@ -8,7 +8,6 @@ from __future__ import annotations
 import argparse
 from collections import Counter, deque
 import dataclasses
-import json
 import math
 import multiprocessing
 import queue as queue_mod
@@ -37,7 +36,7 @@ from tryon.interaction.state_machine import (  # noqa: E402
     KeyframeStateMachine,
 )
 from tryon.keyframe.tryon import KeyframeService  # noqa: E402
-from tryon.logging import JsonlFrameLogger, setup_logging  # noqa: E402
+from tryon.logging import JsonlFrameLogger, dumps_json, setup_logging  # noqa: E402
 from tryon.math import empirical_p50, empirical_p95, project  # noqa: E402
 from tryon.physics.solver import PhysicsSolver  # noqa: E402
 from tryon.types import (  # noqa: E402
@@ -694,7 +693,7 @@ def main(argv: list[str] | None = None) -> int:
         enable_keyframes=not args.no_keyframes,
     )
     summary = runner.run(args.frames)
-    print(json.dumps(summary, ensure_ascii=False, indent=2, default=str))
+    print(dumps_json(summary, indent=2))
     return 0
 
 

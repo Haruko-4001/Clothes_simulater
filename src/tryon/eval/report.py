@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from ..config import REPO_ROOT, Config
-from ..logging import logger
+from ..logging import dumps_json, logger
 
 
 TARGET_HARDWARE_ROWS = [
@@ -86,7 +86,7 @@ def build_report(
 
     json_path = output_dir / "report.json"
     md_path = output_dir / "report.md"
-    json_path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+    json_path.write_text(dumps_json(report, indent=2), encoding="utf-8")
 
     lines = [
         "# Evaluation Report (SPEC v2.0)",
@@ -97,7 +97,7 @@ def build_report(
         "",
         "## Mock framework counters (NOT target-hardware measurements)",
         "```json",
-        json.dumps(report["mock_run_counters"], ensure_ascii=False, indent=2),
+        dumps_json(report["mock_run_counters"], indent=2),
         "```",
         "",
         "## Target-hardware table (empty by design — fill only with real measurements)",
