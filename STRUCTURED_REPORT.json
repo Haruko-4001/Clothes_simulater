@@ -1,0 +1,1153 @@
+{
+  "spec_version": "v2.0",
+  "mode": "mock",
+  "generated_at": "2026-11-09T10:03:40.533497+00:00",
+  "authority": "SPEC.md §0 AGENT_INSTRUCTIONS / Appendix F; CLAUDE.md points here",
+  "files": [
+    {
+      "path": ".gitattributes",
+      "status": "REAL",
+      "category": "code",
+      "symbols": []
+    },
+    {
+      "path": ".gitignore",
+      "status": "REAL",
+      "category": "code",
+      "symbols": []
+    },
+    {
+      "path": "CLAUDE.md",
+      "status": "REAL",
+      "category": "spec_or_doc",
+      "symbols": []
+    },
+    {
+      "path": "Makefile",
+      "status": "REAL",
+      "category": "build",
+      "symbols": []
+    },
+    {
+      "path": "README.md",
+      "status": "REAL",
+      "category": "spec_or_doc",
+      "symbols": []
+    },
+    {
+      "path": "SPEC.md",
+      "status": "REAL",
+      "category": "spec_or_doc",
+      "symbols": []
+    },
+    {
+      "path": "STRUCTURED_REPORT.json",
+      "status": "REAL",
+      "category": "spec_or_doc",
+      "symbols": [],
+      "notes": "This delivery report (SPEC §0.1.6 / §19 / Appendix G)"
+    },
+    {
+      "path": "adapters_vendor/README.md",
+      "status": "REAL",
+      "category": "spec_or_doc",
+      "symbols": []
+    },
+    {
+      "path": "app/cli.py",
+      "status": "REAL",
+      "category": "code",
+      "symbols": [
+        "_load_image",
+        "cmd_bootstrap",
+        "cmd_eval_report",
+        "cmd_run",
+        "cmd_selfcheck",
+        "main"
+      ]
+    },
+    {
+      "path": "app/main.py",
+      "status": "REAL",
+      "category": "code",
+      "symbols": [
+        "make_sample_garment",
+        "load_garment_image",
+        "_mask_bbox",
+        "_bbox_rect_mask",
+        "_contact_mask",
+        "_trace_material",
+        "MockRunner",
+        "parse_args",
+        "main"
+      ]
+    },
+    {
+      "path": "assets/samples/garment.png",
+      "status": "REAL",
+      "category": "data",
+      "symbols": []
+    },
+    {
+      "path": "configs/default.yaml",
+      "status": "REAL",
+      "category": "config",
+      "symbols": []
+    },
+    {
+      "path": "configs/hardware/rtx3060.yaml",
+      "status": "REAL",
+      "category": "config",
+      "symbols": []
+    },
+    {
+      "path": "configs/hardware/rtx4090.yaml",
+      "status": "REAL",
+      "category": "config",
+      "symbols": []
+    },
+    {
+      "path": "configs/mock.yaml",
+      "status": "REAL",
+      "category": "config",
+      "symbols": []
+    },
+    {
+      "path": "configs/real.yaml",
+      "status": "REAL",
+      "category": "config",
+      "symbols": []
+    },
+    {
+      "path": "docker/Dockerfile",
+      "status": "REAL",
+      "category": "build",
+      "symbols": []
+    },
+    {
+      "path": "environment.yml",
+      "status": "REAL",
+      "category": "spec_or_doc",
+      "symbols": []
+    },
+    {
+      "path": "make.cmd",
+      "status": "REAL",
+      "category": "build",
+      "symbols": []
+    },
+    {
+      "path": "pyproject.toml",
+      "status": "REAL",
+      "category": "spec_or_doc",
+      "symbols": []
+    },
+    {
+      "path": "scripts/fetch_weights.sh",
+      "status": "REAL",
+      "category": "build",
+      "symbols": []
+    },
+    {
+      "path": "scripts/install_real.sh",
+      "status": "REAL",
+      "category": "build",
+      "symbols": []
+    },
+    {
+      "path": "scripts/make.py",
+      "status": "REAL",
+      "category": "build",
+      "symbols": [
+        "command_for",
+        "parse_overrides",
+        "main"
+      ],
+      "notes": "Windows fallback for GNU make; commands built after KEY=VALUE parsing"
+    },
+    {
+      "path": "scripts/smoke.sh",
+      "status": "REAL",
+      "category": "build",
+      "symbols": []
+    },
+    {
+      "path": "src/tryon/__init__.py",
+      "status": "REAL",
+      "category": "code",
+      "symbols": []
+    },
+    {
+      "path": "src/tryon/asset/__init__.py",
+      "status": "REAL",
+      "category": "code",
+      "symbols": []
+    },
+    {
+      "path": "src/tryon/asset/asset_builder.py",
+      "status": "REAL",
+      "category": "code",
+      "symbols": [
+        "AppearanceMesh",
+        "CollisionBody",
+        "AssetBuilder",
+        "_planar_uvs"
+      ]
+    },
+    {
+      "path": "src/tryon/asset/drape.py",
+      "status": "REAL",
+      "category": "code",
+      "symbols": [
+        "_face_normals",
+        "_boundary_points",
+        "_chamfer",
+        "DrapeAligner"
+      ]
+    },
+    {
+      "path": "src/tryon/asset/geometry.py",
+      "status": "NOT_IMPLEMENTED",
+      "category": "code",
+      "symbols": [
+        "GeometryEstimator",
+        "InstantMeshBackPrior"
+      ]
+    },
+    {
+      "path": "src/tryon/asset/material_prior.py",
+      "status": "REAL",
+      "category": "code",
+      "symbols": [
+        "_preset_name",
+        "MaterialPrior",
+        "material_prior_level"
+      ]
+    },
+    {
+      "path": "src/tryon/asset/mesh_repair.py",
+      "status": "REAL",
+      "category": "code",
+      "symbols": [
+        "_edge_map",
+        "_compact",
+        "_fill_boundary_loops",
+        "_tri_tri_intersect",
+        "_point_in_tri",
+        "_tri2d_overlap",
+        "self_intersection_count",
+        "MeshRepairer",
+        "_topology_summary"
+      ]
+    },
+    {
+      "path": "src/tryon/asset/registry.py",
+      "status": "REAL",
+      "category": "code",
+      "symbols": [
+        "asset_id_for",
+        "_material_to_dict",
+        "AssetRegistry"
+      ]
+    },
+    {
+      "path": "src/tryon/asset/segment.py",
+      "status": "REAL",
+      "category": "code",
+      "symbols": [
+        "Segmenter"
+      ]
+    },
+    {
+      "path": "src/tryon/asset/stubs.py",
+      "status": "STUB",
+      "category": "code",
+      "symbols": [
+        "ShellTopology",
+        "_ellipse_profile",
+        "build_shell_mesh",
+        "analyze_topology",
+        "shell_support_vertices",
+        "_border_background",
+        "StubSegmenter",
+        "StubGeometryEstimator"
+      ]
+    },
+    {
+      "path": "src/tryon/calibration/__init__.py",
+      "status": "REAL",
+      "category": "code",
+      "symbols": []
+    },
+    {
+      "path": "src/tryon/calibration/collector.py",
+      "status": "REAL",
+      "category": "code",
+      "symbols": [
+        "CollectedSample",
+        "TrajectoryCollector"
+      ]
+    },
+    {
+      "path": "src/tryon/calibration/gates.py",
+      "status": "REAL",
+      "category": "code",
+      "symbols": [
+        "evaluate_g1",
+        "evaluate_g2",
+        "needs_ai_completion",
+        "CalibrationGate"
+      ]
+    },
+    {
+      "path": "src/tryon/calibration/identifier.py",
+      "status": "REAL",
+      "category": "code",
+      "symbols": [
+        "SystemIdentifier",
+        "run_identification_job",
+        "calibration_process_worker"
+      ]
+    },
+    {
+      "path": "src/tryon/calibration/loss.py",
+      "status": "REAL",
+      "category": "code",
+      "symbols": [
+        "_base_asset",
+        "_asset_with_theta",
+        "simulate_forward",
+        "_phi_pen",
+        "_silhouette_iou",
+        "residual_vector",
+        "compute",
+        "fisher_information",
+        "fisher_condition"
+      ]
+    },
+    {
+      "path": "src/tryon/calibration/stubs.py",
+      "status": "STUB",
+      "category": "code",
+      "symbols": []
+    },
+    {
+      "path": "src/tryon/config.py",
+      "status": "REAL",
+      "category": "code",
+      "symbols": [
+        "Config",
+        "_deep_merge",
+        "_merge",
+        "_read_yaml",
+        "load_config",
+        "_validate_config",
+        "config_fingerprint"
+      ]
+    },
+    {
+      "path": "src/tryon/display/__init__.py",
+      "status": "REAL",
+      "category": "code",
+      "symbols": [
+        "HeadlessDisplay",
+        "WindowDisplay"
+      ]
+    },
+    {
+      "path": "src/tryon/display/compositor.py",
+      "status": "REAL",
+      "category": "code",
+      "symbols": [
+        "Compositor"
+      ]
+    },
+    {
+      "path": "src/tryon/display/hud.py",
+      "status": "REAL",
+      "category": "code",
+      "symbols": [
+        "HUD"
+      ]
+    },
+    {
+      "path": "src/tryon/eval/__init__.py",
+      "status": "REAL",
+      "category": "code",
+      "symbols": []
+    },
+    {
+      "path": "src/tryon/eval/metrics.py",
+      "status": "REAL",
+      "category": "code",
+      "symbols": [
+        "iou",
+        "chamfer_distance",
+        "normal_error",
+        "ade",
+        "fde",
+        "penetration_rate",
+        "parameter_error",
+        "energy_decay_ok",
+        "convergence",
+        "latency_percentiles"
+      ],
+      "notes": "All SPEC §7 metrics; wired via report.evaluate_ground_truth()"
+    },
+    {
+      "path": "src/tryon/eval/report.py",
+      "status": "REAL",
+      "category": "code",
+      "symbols": [
+        "_finite",
+        "_read_jsonl",
+        "evaluate_ground_truth",
+        "build_report"
+      ],
+      "notes": "Fully implemented; target-hardware rows are intentionally NOT_MEASURED by design (§17.10), not an unfinished implementation"
+    },
+    {
+      "path": "src/tryon/factory.py",
+      "status": "REAL",
+      "category": "code",
+      "symbols": [
+        "_try",
+        "build"
+      ]
+    },
+    {
+      "path": "src/tryon/interaction/__init__.py",
+      "status": "REAL",
+      "category": "code",
+      "symbols": []
+    },
+    {
+      "path": "src/tryon/interaction/feedback.py",
+      "status": "REAL",
+      "category": "code",
+      "symbols": [
+        "material_feedback",
+        "framing_feedback",
+        "gate_feedback"
+      ]
+    },
+    {
+      "path": "src/tryon/interaction/gestures.py",
+      "status": "REAL",
+      "category": "code",
+      "symbols": [
+        "classify_hand_motion",
+        "event_velocity"
+      ]
+    },
+    {
+      "path": "src/tryon/interaction/state_machine.py",
+      "status": "REAL",
+      "category": "code",
+      "symbols": [
+        "AssetState",
+        "InteractionState",
+        "KeyframeState",
+        "AssetStateMachine",
+        "InteractionStateMachine",
+        "KeyframeStateMachine"
+      ]
+    },
+    {
+      "path": "src/tryon/keyframe/__init__.py",
+      "status": "REAL",
+      "category": "code",
+      "symbols": []
+    },
+    {
+      "path": "src/tryon/keyframe/fuse.py",
+      "status": "REAL",
+      "category": "code",
+      "symbols": [
+        "alpha_sequence",
+        "is_expired",
+        "FusionBlender",
+        "blend"
+      ]
+    },
+    {
+      "path": "src/tryon/keyframe/stubs.py",
+      "status": "STUB",
+      "category": "code",
+      "symbols": []
+    },
+    {
+      "path": "src/tryon/keyframe/trigger.py",
+      "status": "REAL",
+      "category": "code",
+      "symbols": [
+        "KeyframeTrigger"
+      ]
+    },
+    {
+      "path": "src/tryon/keyframe/tryon.py",
+      "status": "STUB",
+      "category": "code",
+      "symbols": [
+        "_foreground_mask",
+        "StubKeyframeTryOn",
+        "FashnTryOn",
+        "KeyframeService"
+      ],
+      "notes": "StubKeyframeTryOn is delivered; FashnTryOn Real adapter raises NotImplementedError and is listed in not_implemented"
+    },
+    {
+      "path": "src/tryon/logging.py",
+      "status": "REAL",
+      "category": "code",
+      "symbols": [
+        "setup_logging",
+        "_json_default",
+        "to_json_safe",
+        "dumps_json",
+        "JsonlFrameLogger",
+        "_sanitise",
+        "log_event",
+        "utc_ms"
+      ]
+    },
+    {
+      "path": "src/tryon/math/__init__.py",
+      "status": "REAL",
+      "category": "code",
+      "symbols": []
+    },
+    {
+      "path": "src/tryon/math/numerics.py",
+      "status": "REAL",
+      "category": "code",
+      "symbols": [
+        "is_finite",
+        "condition_number",
+        "solve_psd",
+        "clip_mahalanobis",
+        "project_box",
+        "weighted_geometric_mean",
+        "empirical_p95",
+        "empirical_p50",
+        "safe_scalar",
+        "relative_step"
+      ]
+    },
+    {
+      "path": "src/tryon/math/projection.py",
+      "status": "REAL",
+      "category": "code",
+      "symbols": [
+        "project",
+        "backproject",
+        "camera_to_world",
+        "world_to_camera",
+        "make_intrinsics",
+        "visible_mask"
+      ]
+    },
+    {
+      "path": "src/tryon/math/quaternion.py",
+      "status": "REAL",
+      "category": "code",
+      "symbols": [
+        "normalize_quat",
+        "is_unit_quat",
+        "quat_mul",
+        "quat_conjugate",
+        "quat_from_axis_angle",
+        "quat_to_axis_angle",
+        "slerp"
+      ]
+    },
+    {
+      "path": "src/tryon/math/se3.py",
+      "status": "REAL",
+      "category": "code",
+      "symbols": [
+        "quat_to_R",
+        "R_to_quat",
+        "compose_T",
+        "transform",
+        "inverse_T",
+        "compose_Ts",
+        "is_SE3",
+        "look_at",
+        "rotation_between_vectors"
+      ]
+    },
+    {
+      "path": "src/tryon/perception/__init__.py",
+      "status": "REAL",
+      "category": "code",
+      "symbols": []
+    },
+    {
+      "path": "src/tryon/perception/body.py",
+      "status": "NOT_IMPLEMENTED",
+      "category": "code",
+      "symbols": [
+        "BodyTracker"
+      ]
+    },
+    {
+      "path": "src/tryon/perception/camera.py",
+      "status": "REAL",
+      "category": "code",
+      "symbols": [
+        "CameraModel",
+        "default_camera",
+        "RealCamera"
+      ]
+    },
+    {
+      "path": "src/tryon/perception/contact.py",
+      "status": "REAL",
+      "category": "code",
+      "symbols": [
+        "ContactExtractor",
+        "_nearest_vertex"
+      ]
+    },
+    {
+      "path": "src/tryon/perception/framing.py",
+      "status": "REAL",
+      "category": "code",
+      "symbols": [
+        "FramingGate"
+      ]
+    },
+    {
+      "path": "src/tryon/perception/hands.py",
+      "status": "NOT_IMPLEMENTED",
+      "category": "code",
+      "symbols": [
+        "HandTracker"
+      ]
+    },
+    {
+      "path": "src/tryon/perception/stubs.py",
+      "status": "STUB",
+      "category": "code",
+      "symbols": [
+        "camera_model",
+        "scripted_body_keypoints",
+        "scripted_pose_theta",
+        "_lerp",
+        "scripted_hand_palm",
+        "hand_landmarks",
+        "StubBodyTracker",
+        "StubHandTracker",
+        "_background_image",
+        "render_scene"
+      ]
+    },
+    {
+      "path": "src/tryon/physics/__init__.py",
+      "status": "REAL",
+      "category": "code",
+      "symbols": []
+    },
+    {
+      "path": "src/tryon/physics/constraints.py",
+      "status": "REAL",
+      "category": "code",
+      "symbols": [
+        "process_contact_events",
+        "apply_contact",
+        "friction_limit"
+      ]
+    },
+    {
+      "path": "src/tryon/physics/integrator.py",
+      "status": "REAL",
+      "category": "code",
+      "symbols": [
+        "_scatter_add_3",
+        "_distance_projection",
+        "_damping_factors",
+        "integrate"
+      ],
+      "notes": "Soft-constraint relaxation read from configs (§0.2)"
+    },
+    {
+      "path": "src/tryon/physics/solver.py",
+      "status": "STUB",
+      "category": "code",
+      "symbols": [
+        "PhysicsSolver",
+        "DiffClothSolver"
+      ],
+      "notes": "Main delivery is the working stub XPBD PhysicsSolver; the nested DiffClothSolver Real adapter is NOT_IMPLEMENTED and listed in not_implemented"
+    },
+    {
+      "path": "src/tryon/physics/state.py",
+      "status": "REAL",
+      "category": "code",
+      "symbols": [
+        "MeshConstraints",
+        "unique_edges",
+        "vertex_areas",
+        "support_vertices",
+        "bending_pairs",
+        "build_constraints",
+        "initial_state",
+        "elastic_energy",
+        "kinetic_energy",
+        "total_energy"
+      ]
+    },
+    {
+      "path": "src/tryon/physics/stubs.py",
+      "status": "STUB",
+      "category": "code",
+      "symbols": []
+    },
+    {
+      "path": "src/tryon/policy/__init__.py",
+      "status": "REAL",
+      "category": "code",
+      "symbols": []
+    },
+    {
+      "path": "src/tryon/policy/degrade.py",
+      "status": "REAL",
+      "category": "code",
+      "symbols": [
+        "DegradeAction",
+        "DegradeDecision",
+        "route_framing",
+        "route_asset_confidence",
+        "requires_human_review"
+      ]
+    },
+    {
+      "path": "src/tryon/policy/license_gate.py",
+      "status": "REAL",
+      "category": "code",
+      "symbols": [
+        "_norm",
+        "LicenseGate"
+      ]
+    },
+    {
+      "path": "src/tryon/protocols.py",
+      "status": "REAL",
+      "category": "code",
+      "symbols": [
+        "Segmenter",
+        "GeometryEstimator",
+        "MeshRepairer",
+        "DrapeAligner",
+        "MaterialPrior",
+        "AssetBuilder",
+        "Camera",
+        "BodyTracker",
+        "FramingGate",
+        "HandTracker"
+      ]
+    },
+    {
+      "path": "src/tryon/render/__init__.py",
+      "status": "REAL",
+      "category": "code",
+      "symbols": []
+    },
+    {
+      "path": "src/tryon/render/gaussian.py",
+      "status": "NOT_IMPLEMENTED",
+      "category": "code",
+      "symbols": [
+        "GaussianSplatRenderer"
+      ]
+    },
+    {
+      "path": "src/tryon/render/mesh_render.py",
+      "status": "REAL",
+      "category": "code",
+      "symbols": [
+        "PILMeshRenderer"
+      ]
+    },
+    {
+      "path": "src/tryon/render/stubs.py",
+      "status": "STUB",
+      "category": "code",
+      "symbols": []
+    },
+    {
+      "path": "src/tryon/types.py",
+      "status": "REAL",
+      "category": "code",
+      "symbols": [
+        "TryonError",
+        "MaterialState",
+        "GeometryProvenance",
+        "FramingVerdict",
+        "ContactKind",
+        "GateVerdict",
+        "GarmentClass",
+        "_check_unit_interval",
+        "MaterialParams",
+        "material_bounds_arrays"
+      ]
+    },
+    {
+      "path": "tests/conftest.py",
+      "status": "REAL",
+      "category": "test",
+      "symbols": [
+        "mock_cfg",
+        "garment_image",
+        "stub_asset",
+        "physics_solver",
+        "synth_trajectory",
+        "make_frame",
+        "make_body",
+        "make_hand"
+      ]
+    },
+    {
+      "path": "tests/test_asset_stub.py",
+      "status": "REAL",
+      "category": "test",
+      "symbols": [
+        "test_asset_mesh_is_closed_manifold_and_thick",
+        "test_g1_and_back_provenance_and_ai_completion",
+        "test_appearance_mesh_is_separate_and_cannot_enter_physics",
+        "test_material_prior_is_ai_prior_and_in_domain",
+        "test_mesh_repair_rejects_invalid_thickness",
+        "test_registry_commit_increments_version_once_and_sets_ttl"
+      ]
+    },
+    {
+      "path": "tests/test_calibration_gates.py",
+      "status": "REAL",
+      "category": "test",
+      "symbols": [
+        "_state",
+        "_result",
+        "test_light_shake_is_not_excited",
+        "test_single_axis_pull_is_excited",
+        "_hist",
+        "test_commit_requires_all_three_gates",
+        "test_predicts_false_blocks_commit",
+        "test_high_condition_blocks_commit",
+        "test_insufficient_loss_drop_blocks_commit",
+        "test_committed_identification_versions_asset_with_scene_tag_and_ttl"
+      ]
+    },
+    {
+      "path": "tests/test_end_to_end_mock.py",
+      "status": "REAL",
+      "category": "test",
+      "symbols": [
+        "test_mock_end_to_end_300_frames_without_gpu_network_weights_gui",
+        "test_eval_report_wires_every_spec7_metric_without_inventing_numbers",
+        "test_mock_loop_is_deterministic_when_calibration_is_disabled"
+      ]
+    },
+    {
+      "path": "tests/test_fps_bookkeeping.py",
+      "status": "REAL",
+      "category": "test",
+      "symbols": [
+        "test_five_fps_fields_never_cross_contaminate",
+        "test_p50_p95_from_pts_ms_not_mean",
+        "test_frame_log_schema_has_nine_timing_fields"
+      ]
+    },
+    {
+      "path": "tests/test_framing_gate.py",
+      "status": "REAL",
+      "category": "test",
+      "symbols": [
+        "_frame",
+        "_body",
+        "_status",
+        "test_full_frontal_is_ok",
+        "test_knee_crop_partial_and_no_out_of_frame_content",
+        "test_side_back_requires_async_and_blocks_2d_keyframe",
+        "test_extreme_occlusion_and_multi_layer_reject",
+        "test_multi_frame_accumulation_raises_confidence"
+      ]
+    },
+    {
+      "path": "tests/test_fusion.py",
+      "status": "REAL",
+      "category": "test",
+      "symbols": [
+        "test_alpha_sequence_is_exactly_six_frames_and_decreasing",
+        "test_fusion_blender_steps_six_frames",
+        "test_pose_expiry_threshold",
+        "test_blend_respects_protected_mask"
+      ]
+    },
+    {
+      "path": "tests/test_identifiability.py",
+      "status": "REAL",
+      "category": "test",
+      "symbols": [
+        "SyntheticClothSolver",
+        "_contact",
+        "_initial",
+        "_camera",
+        "_batch",
+        "_static_batch",
+        "_normalised_cond",
+        "_fisher",
+        "test_static_fisher_is_rank_deficient_and_dynamic_is_richer",
+        "test_parameter_error_decreases_against_known_theta_star"
+      ]
+    },
+    {
+      "path": "tests/test_json_safety.py",
+      "status": "REAL",
+      "category": "test",
+      "symbols": [
+        "_strict_loads",
+        "_Colour",
+        "test_non_finite_floats_become_null_and_output_is_strict_json",
+        "test_to_json_safe_flattens_numpy_path_and_enum",
+        "test_frame_logger_never_writes_non_standard_constants",
+        "test_mock_run_stdout_summary_is_strict_json"
+      ],
+      "notes": "Extra regression file, not part of SPEC §16 matrix"
+    },
+    {
+      "path": "tests/test_license_gate.py",
+      "status": "REAL",
+      "category": "test",
+      "symbols": [
+        "test_real_mode_blocks_nc_and_nd_weights",
+        "test_allow_nc_weights_switch_is_effective",
+        "test_mock_mode_does_not_block_experimental_weights",
+        "test_real_default_startup_is_allowed"
+      ]
+    },
+    {
+      "path": "tests/test_make_runner.py",
+      "status": "REAL",
+      "category": "test",
+      "symbols": [
+        "make_runner",
+        "test_parse_overrides_separates_env_from_forwarded_args",
+        "test_bootstrap_command_uses_env_img",
+        "test_bootstrap_command_uses_default_without_img",
+        "test_documented_img_override_reaches_the_cli"
+      ],
+      "notes": "Extra regression file, not part of SPEC §16 matrix"
+    },
+    {
+      "path": "tests/test_math.py",
+      "status": "REAL",
+      "category": "test",
+      "symbols": [
+        "test_quat_to_R_orthonormal_det_one",
+        "test_quat_to_R_rejects_non_unit",
+        "test_project_backproject_roundtrip",
+        "test_project_raises_on_non_positive_depth",
+        "test_se3_composition_associativity_and_transform",
+        "test_look_at_is_se3_and_depth_positive"
+      ]
+    },
+    {
+      "path": "tests/test_physics_stub.py",
+      "status": "REAL",
+      "category": "test",
+      "symbols": [
+        "test_release_clears_attachments_but_keeps_velocities",
+        "test_energy_monotonically_decays_after_release",
+        "test_attachment_persists_under_long_pull",
+        "test_occlusion_hold_releases_after_timeout",
+        "test_soft_constraint_relaxation_is_read_from_config",
+        "test_nan_triggers_divergence_and_fallback_is_finite"
+      ]
+    },
+    {
+      "path": "tests/test_state_machines.py",
+      "status": "REAL",
+      "category": "test",
+      "symbols": [
+        "_prepare",
+        "test_asset_state_machine_happy_path_and_versions",
+        "test_asset_state_machine_failure_and_review_paths",
+        "test_interaction_state_machine_release_semantics",
+        "test_keyframe_state_machine_all_states_and_hysteresis",
+        "_SlowBackend",
+        "test_keyframe_queue_bounded_at_two"
+      ]
+    },
+    {
+      "path": "tests/test_types.py",
+      "status": "REAL",
+      "category": "test",
+      "symbols": [
+        "_conf",
+        "_framing",
+        "test_timing_book_five_independent_fields",
+        "test_material_params_domain_and_state_invariant",
+        "test_confidence_weighted_geometric_mean",
+        "test_all_referenced_types_instantiable"
+      ]
+    },
+    {
+      "path": "var/logs/run.jsonl",
+      "status": "REAL",
+      "category": "data",
+      "symbols": []
+    }
+  ],
+  "phases": [
+    {
+      "phase": 0,
+      "accept_cmd": "pytest tests/test_end_to_end_mock.py tests/test_math.py -q && make mock-run",
+      "equivalent_cmd": "No GNU make on this host: `make X` executed as `python scripts/make.py X`; mock-run forwards --log to a path outside the repo to protect the tracked sample log",
+      "result": "PASS",
+      "tests_passed": 9
+    },
+    {
+      "phase": 1,
+      "accept_cmd": "pytest tests/test_asset_stub.py tests/test_license_gate.py -q && make bootstrap-asset IMG=assets/samples/garment.png",
+      "equivalent_cmd": "No GNU make on this host: `make X` executed as `python scripts/make.py X`; mock-run forwards --log to a path outside the repo to protect the tracked sample log",
+      "result": "PASS",
+      "tests_passed": 10
+    },
+    {
+      "phase": 2,
+      "accept_cmd": "pytest tests/test_physics_stub.py tests/test_framing_gate.py tests/test_state_machines.py -q",
+      "equivalent_cmd": "No GNU make on this host: `make X` executed as `python scripts/make.py X`; mock-run forwards --log to a path outside the repo to protect the tracked sample log",
+      "result": "PASS",
+      "tests_passed": 16
+    },
+    {
+      "phase": 3,
+      "accept_cmd": "pytest tests/test_calibration_gates.py tests/test_identifiability.py -q",
+      "equivalent_cmd": "No GNU make on this host: `make X` executed as `python scripts/make.py X`; mock-run forwards --log to a path outside the repo to protect the tracked sample log",
+      "result": "PASS",
+      "tests_passed": 13
+    },
+    {
+      "phase": 4,
+      "accept_cmd": "pytest tests/test_fps_bookkeeping.py tests/test_fusion.py -q",
+      "equivalent_cmd": "No GNU make on this host: `make X` executed as `python scripts/make.py X`; mock-run forwards --log to a path outside the repo to protect the tracked sample log",
+      "result": "PASS",
+      "tests_passed": 7
+    },
+    {
+      "phase": 5,
+      "accept_cmd": "make test && make eval-report",
+      "equivalent_cmd": "No GNU make on this host: `make X` executed as `python scripts/make.py X`; mock-run forwards --log to a path outside the repo to protect the tracked sample log",
+      "result": "PASS",
+      "tests_passed": 67
+    }
+  ],
+  "not_implemented": [
+    "Real GeometryEstimator (SewFormer / GarmentRec / InstantMesh)",
+    "Real BodyTracker (MediaPipe / SMPL-X)",
+    "Real HandTracker (MediaPipe Hands / WiLoR / HaMeR)",
+    "DiffClothSolver (differentiable cloth gradients)",
+    "GaussianSplatRenderer (3DGS)",
+    "FashnTryOn real keyframe generation (and CatVTON / OmniTry / Leffa)",
+    "VTON 360 / TryOnCrafter arbitrary-view rendering (code not public; design reference only)",
+    "Target-hardware measurements (all rows NOT_MEASURED by design, §17.10)"
+  ],
+  "ambiguities": [
+    {
+      "id": "A1",
+      "spec_ref": "§2.1 / §1.3",
+      "observation": "§2.1 constrains display_fps>=30 and physics_hz=60; the mock reference loop is a pure-Python stub and its framework counters are lower. p95 latency is within the <=100ms Phase-4 bound.",
+      "question": "Does §2.1's fps constraint apply to mock framework counters, or only to target-hardware measurements?",
+      "requested_action": "Ruling required. Per Appendix F the implementation must not silently pick a middle value or adjust targets on its own; no numbers are claimed in the README measured table."
+    },
+    {
+      "id": "A2",
+      "spec_ref": "§15 Phase 3 / §6.1",
+      "observation": "A 300-frame mock run reports commits=0 and material_histogram all AI_PRIOR; COMMIT / DEGRADE are covered by unit + integration tests, and a 60-frame known-Θ* synthetic trajectory verifies ε_Θ decreases.",
+      "question": "Must the 300-frame mock main loop itself reach a COMMIT, or is gate-level plus synthetic-trajectory coverage sufficient for Phase 3?",
+      "requested_action": "Ruling required before changing mock excitation generation."
+    },
+    {
+      "id": "A3",
+      "spec_ref": "§5 / §17.8",
+      "observation": "Pipeline C uses a multiprocessing worker; calibration_results varies between identical 300-frame runs (1 vs 2) because submission timing is wall-clock dependent. Physics/framing are deterministic when calibration is disabled (regression test).",
+      "question": "Is wall-clock-dependent submission count acceptable, or must the mock worker be synchronised for reproducible acceptance runs?",
+      "requested_action": "Ruling required; pipeline C must not block pipeline B either way."
+    }
+  ],
+  "deviations": [
+    {
+      "spec_ref": "§16 / §19 / Appendix E",
+      "description": "SPEC mandates 12 test files; the tree has 14. The 12 §16 files are unchanged; test_json_safety.py and test_make_runner.py are additional regression files for a strict-JSON fix and a Windows-runner fix. The SPEC count was not edited."
+    },
+    {
+      "spec_ref": "§4 directory structure",
+      "description": "Extra files not listed in §4: .gitignore, .gitattributes, STRUCTURED_REPORT.json, scripts/make.py, make.cmd, the two extra regression tests, var/logs/run.jsonl, assets/samples/garment.png. All are documentation/build/data artefacts required for a working delivery; no §4 file is missing."
+    },
+    {
+      "spec_ref": "§12 config template",
+      "description": "configs/default.yaml carries extra keys (g1_iou_threshold, g2, confidence_weights, mesh_resolution, etc.) defined by §7/§10. The unused N/m keys support_stiffness / attach_stiffness were replaced by the actually consumed dimensionless support_relax / attach_relax (§0.2)."
+    }
+  ],
+  "risks": [
+    "Real adapters all fall back to Stub with E_ADAPTER_FALLBACK; no GPU/weights/network path is exercised by this delivery.",
+    "Pipeline C submission count is wall-clock dependent (see ambiguities A3).",
+    "Target-hardware table stays empty; no performance or accuracy number is claimed."
+  ],
+  "dod": [
+    {
+      "item": "make mock-run: 300 frames without GPU/network/weights/GUI",
+      "status": "PASS"
+    },
+    {
+      "item": "make test all green (12 SPEC files)",
+      "status": "PASS",
+      "note": "12 SPEC files + 2 regression files; 67 tests"
+    },
+    {
+      "item": "README has three commands, non-promises, empty measured table",
+      "status": "PASS"
+    },
+    {
+      "item": "SPEC.md and CLAUDE.md at root, CLAUDE.md points to SPEC",
+      "status": "PASS"
+    },
+    {
+      "item": "Five fps fields separate; HUD shows MaterialState + FramingVerdict + guide_text",
+      "status": "PASS"
+    },
+    {
+      "item": "math/ is the only implementation of projection/quaternion/SE(3)",
+      "status": "PASS"
+    },
+    {
+      "item": "Stub/Real dual path swappable via factory.build(cfg)",
+      "status": "PASS"
+    },
+    {
+      "item": "policy/license_gate.py blocks NC weights in real mode",
+      "status": "PASS"
+    },
+    {
+      "item": "No fabricated measured numbers",
+      "status": "PASS"
+    },
+    {
+      "item": "STRUCTURED_REPORT output",
+      "status": "PASS",
+      "note": "this file"
+    }
+  ],
+  "measured_numbers": [],
+  "license_flags": [
+    "CatVTON / IDM-VTON / OOTDiffusion / StableVITON / CausVid: CC BY-NC-SA 4.0",
+    "WiLoR: CC-BY-NC-ND; MANO restricted",
+    "SMPL-X / MANO: research-only, registration required",
+    "RTV: commercial use requires written authorisation",
+    "SDXL-Turbo: non-commercial",
+    "VTON360 checkpoint: Open RAIL-M derivative",
+    "Repository MIT/Apache does NOT imply weights are commercially usable",
+    "policy.allow_nc_weights must remain false in production"
+  ]
+}

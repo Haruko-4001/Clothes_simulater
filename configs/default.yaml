@@ -29,8 +29,8 @@ physics:                         # §10.1
   alpha_K: 0.01
   energy_decay_gamma: 0.15
   penetration_clip_m: 0.002
-  support_stiffness: 5000.0     # N/m, shoulder support (body-relative)
-  attach_stiffness: 20000.0     # N/m, hand attachment soft constraint
+  support_relax: 0.15           # dimensionless XPBD relaxation, shoulder support
+  attach_relax: 0.35            # dimensionless XPBD relaxation, hand attachment
   max_substep_delta_m: 0.05     # clamp per-substep displacement
   energy_settle_j: 1.0e-3       # E_min for REBOUNDING → IDLE
 render: {backend: stub, scale: 1.0}   # scale<1 renders the mesh layer at reduced resolution

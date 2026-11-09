@@ -69,6 +69,55 @@ def test_occlusion_hold_releases_after_timeout(stub_asset, physics_solver, mock_
     assert np.all(np.isfinite(state.velocities))
 
 
+def test_soft_constraint_relaxation_is_read_from_config(stub_asset, mock_cfg):
+    """SPEC §0.2: no second hardcoded copy of a physics threshold exists.
+
+    Changing ``physics.support_relax`` / ``physics.attach_relax`` must change
+    the trajectory; otherwise the config keys would be decorative.
+    """
+    from tryon.physics.solver import PhysicsSolver
+
+    dt = float(mock_cfg.require("physics.dt"))
+    anchor = np.array([-0.22, 1.20, 0.0])
+
+    def settle(cfg):
+        solver = PhysicsSolver(cfg)
+        state = solver.initial_state(stub_asset)
+        for _ in range(6):
+            state = solver.step(state, stub_asset, [], dt)
+        return solver, state
+
+    def support_positions(relax):
+        cfg = mock_cfg.clone()
+        cfg.set("physics.support_relax", relax)
+        solver, state = settle(cfg)
+        for _ in range(8):
+            state = solver.step(state, stub_asset, [], dt)
+        return state.positions.copy()
+
+    assert not np.allclose(support_positions(0.05), support_positions(0.90))
+
+    def attach_positions(relax):
+        cfg = mock_cfg.clone()
+        cfg.set("physics.attach_relax", relax)
+        solver, state = settle(cfg)
+        vid = int(np.argmin(np.linalg.norm(state.positions - anchor, axis=1)))
+        hand = state.positions[vid].copy()
+        state = solver.step(
+            state, stub_asset,
+            [ContactEvent(0.0, ContactKind.GRASP, hand, vid, 0.0, "right")], dt,
+        )
+        for k in range(10):
+            hand = hand + np.array([-0.004, -0.002, 0.003])
+            state = solver.step(
+                state, stub_asset,
+                [ContactEvent(float(k), ContactKind.PULL, hand, vid, 0.0, "right")], dt,
+            )
+        return state.positions[vid].copy()
+
+    assert not np.allclose(attach_positions(0.05), attach_positions(0.90))
+
+
 def test_nan_triggers_divergence_and_fallback_is_finite(stub_asset, physics_solver, mock_cfg):
     asset = stub_asset
     dt = float(mock_cfg.require("physics.dt"))

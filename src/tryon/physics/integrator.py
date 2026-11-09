@@ -104,6 +104,10 @@ def integrate(
     gravity = np.asarray(cfg.require("math.gravity"), dtype=np.float64)
     gamma = float(cfg.require("physics.energy_decay_gamma"))
     clip = float(cfg.require("physics.max_substep_delta_m"))
+    # Soft-constraint relaxation is a config value (SPEC §0.2: no second
+    # hardcoded copy of a threshold inside the implementation).
+    support_relax = float(cfg.require("physics.support_relax"))
+    attach_relax = float(cfg.require("physics.attach_relax"))
     dt_s = float(dt) / n_sub
     if not math.isfinite(dt_s) or dt_s <= 0.0:
         raise ValueError("dt must be positive and finite")
@@ -143,14 +147,14 @@ def integrate(
         # Shoulder support: body-relative anchors (rest positions).
         if len(constraints.support_idx):
             sup = constraints.support_idx
-            x[sup] += 0.15 * (constraints.support_anchor - x[sup])
+            x[sup] += support_relax * (constraints.support_anchor - x[sup])
 
         # Hand attachment: soft constraint toward the last known target.
         for vid in list(attached.keys()):
             target = targets.get(vid)
             if target is None:
                 continue
-            x[vid] += 0.35 * (target - x[vid])
+            x[vid] += attach_relax * (target - x[vid])
 
         _distance_projection(
             x,

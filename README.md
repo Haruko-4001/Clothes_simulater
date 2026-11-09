@@ -12,7 +12,7 @@ make mock-run
 # 2) 管线 A：单张衣服图冷启动资产（G1 门禁 + 注册表）
 make bootstrap-asset IMG=assets/samples/garment.png
 
-# 3) 12 个测试文件全量
+# 3) 全量测试（SPEC §16 的 12 个规格文件 + 2 个回归文件）
 make test
 ```
 
@@ -122,13 +122,15 @@ python scripts\make.py test
 | ε_Θ（合成数据） | 下降 | TODO |
 | peak VRAM | 依硬件档位 | TODO |
 
-`make eval-report` 只在 `mock_run_counters` 中输出 mock 框架计数，并把目标硬件表留为 TODO。
+`make eval-report` 只在 `mock_run_counters` 中输出 mock 框架计数，并把目标硬件表留为 TODO。§7 的全部指标实现集中在 `src/tryon/eval/metrics.py`，由 `eval/report.py` 接线；调用方提供真值时经 `evaluate_ground_truth()` 计算并放入 `synthetic_validation`，`measured_numbers` 恒为空。
+
+> 口径说明：mock 框架计数不构成 §2.1 的目标硬件性能声明。`display_fps` / `physics_hz` 在纯 Python stub 下不等于规格目标，按附录 F 不得自行调整，已作为 **AMBIGUITY** 登记在 `STRUCTURED_REPORT.json` 中请求裁决（mock 口径是否豁免）。
 
 ## 已实现 / 未实现（诚实声明）
 
 **已实现（mock 路径）**：数学层、封闭双面壳几何与 G1/G2、XPBD 物理、接触/释放/回弹、四态取景门禁、异步关键帧与 6 帧融合、HUD、三状态机、有限差分雅可比、LM/EKF、三闸门、许可门禁、注册表版本/TTL、12 个测试文件、300 帧主循环。
 
-**未实现（Real 适配器，均回退 Stub 并记 `E_ADAPTER_FALLBACK`）**：SewFormer / GarmentRec / InstantMesh 真实几何、MediaPipe / SMPL-X 真实人体与手部、DiffCloth 可微梯度、3DGS 真实渲染、FASHN / OmniTry / CatVTON 真实生成、VTON 360 / TryOnCrafter（代码未公开/仅设计参考）。详见 `STRUCTURED_REPORT`（本次交付输出）。
+**未实现（Real 适配器，均回退 Stub 并记 `E_ADAPTER_FALLBACK`）**：SewFormer / GarmentRec / InstantMesh 真实几何、MediaPipe / SMPL-X 真实人体与手部、DiffCloth 可微梯度、3DGS 真实渲染、FASHN / OmniTry / CatVTON 真实生成、VTON 360 / TryOnCrafter（代码未公开/仅设计参考）。逐文件状态、各 Phase 验收结果、歧义裁决请求与许可证标记见 **[`STRUCTURED_REPORT.json`](STRUCTURED_REPORT.json)**（SPEC 附录 G 要求的交付物）。
 
 **真实接入**：
 
@@ -143,7 +145,28 @@ bash scripts/install_real.sh --only=fashn_vton   # 可选，需要网络
 make test
 ```
 
-12 个文件：`test_math / test_types / test_asset_stub / test_physics_stub / test_state_machines / test_framing_gate / test_calibration_gates / test_identifiability / test_fps_bookkeeping / test_fusion / test_license_gate / test_end_to_end_mock`。
+SPEC §16 / §19 / 附录 E 规定 **12 个规格测试文件**，数量不变：
+
+`test_math / test_types / test_asset_stub / test_physics_stub / test_state_machines / test_framing_gate / test_calibration_gates / test_identifiability / test_fps_bookkeeping / test_fusion / test_license_gate / test_end_to_end_mock`
+
+另有 **2 个额外回归文件**（不属于 §16 的规格矩阵，已在 `STRUCTURED_REPORT.json` 的 `deviations` 中登记）：
+
+`test_json_safety`（严格 JSON 输出）/ `test_make_runner`（Windows 入口参数透传）
+
+## 逐 Phase 验收（无 GNU make / Windows）
+
+SPEC §15 的 `ACCEPT_CMD` 使用 `make`。本机没有 GNU make 时，用 `scripts/make.py` 等价执行；下表逐 Phase 给出等价命令。**`make.py mock-run` 会覆盖已跟踪的 `var/logs/run.jsonl`，验收时务必透传 `--log` 指向仓库外。**
+
+| Phase | 等价命令 |
+|---|---|
+| 0 | `python scripts\make.py test` 后 `python -m app.main --mode mock --frames 300 --headless --log <外部路径>` |
+| 1 | `python scripts\make.py bootstrap-asset IMG=assets\samples\garment.png` |
+| 2 | `python -m pytest tests/test_physics_stub.py tests/test_framing_gate.py tests/test_state_machines.py -q` |
+| 3 | `python -m pytest tests/test_calibration_gates.py tests/test_identifiability.py -q` |
+| 4 | `python -m pytest tests/test_fps_bookkeeping.py tests/test_fusion.py -q` |
+| 5 | `python scripts\make.py test` 后 `python -m app.cli eval-report` |
+
+`make.cmd` 提供同名入口（要求 `python` 指向装齐依赖的解释器）。当前环境的 Bash `python` 默认指向不含 pytest 的受管 Python，需把系统 Python 目录前置到 PATH。
 
 ## 日志
 

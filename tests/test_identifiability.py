@@ -176,3 +176,30 @@ def test_parameter_error_decreases_against_known_theta_star(stub_asset, mock_cfg
         )
     assert intermediate < initial_error
     assert res.loss_after <= res.loss_before
+
+
+def test_synthetic_60_frame_trajectory_reduces_parameter_error(stub_asset, mock_cfg):
+    """SPEC §15 Phase 3: 60–120 frames of known-Θ* trajectory, ε_Θ must fall.
+
+    Uses the §7 metric implementation rather than recomputing the norm by
+    hand, so the report and the acceptance test share one definition.
+    """
+    from tryon.eval.metrics import parameter_error
+
+    true_theta = np.array([0.55, 2.4e4, 6.0e-3, 0.28, 0.62, 4.5, 2.0e-3])
+    true_material = MaterialParams.from_vector(true_theta, template=stub_asset.material)
+    true_asset = dataclasses.replace(stub_asset, material=true_material)
+    solver = SyntheticClothSolver(stub_asset)
+    batch = _batch(solver, true_asset, dynamic=True, T=60)
+    assert 60 <= len(batch.states) <= 120
+
+    # The simulator must see the prior Θ₀, never the hidden ground truth.
+    solver.asset = stub_asset
+    ident = SystemIdentifier(mock_cfg, solver)
+    before = parameter_error(stub_asset.material.to_vector(), true_theta)
+    res = ident.update(batch)
+    after = parameter_error(res.params.to_vector(), true_theta)
+
+    assert np.isfinite(before) and np.isfinite(after)
+    assert after < before, f"ε_Θ did not decrease: {before} -> {after}"
+    assert res.loss_after <= res.loss_before

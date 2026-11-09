@@ -91,9 +91,6 @@ def bending_pairs(vertices: np.ndarray, faces: np.ndarray) -> tuple[np.ndarray, 
 def build_constraints(
     mesh: SimReadyMesh,
     material: MaterialParams,
-    *,
-    support_stiffness: float,
-    attach_stiffness_unused: float = 0.0,
 ) -> MeshConstraints:
     V = mesh.vertices
     F = mesh.faces

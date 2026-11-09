@@ -106,6 +106,38 @@ def test_insufficient_loss_drop_blocks_commit(mock_cfg):
     assert gate.evaluate(_result(loss_before=10.0, loss_after=9.9), hist) == GateVerdict.KEEP_PRIOR
 
 
+def test_committed_identification_versions_asset_with_scene_tag_and_ttl(
+    mock_cfg, stub_asset, tmp_path
+):
+    """§6.1 CALIBRATING→CALIBRATED side effects, end to end.
+
+    Identification result → G3 gate → registry COMMIT. Calibrated parameters
+    are never written permanently into the SKU (SPEC §17.7).
+    """
+    from tryon.asset.registry import AssetRegistry
+    from tryon.types import MaterialState
+
+    gate = CalibrationGate(mock_cfg)
+    hist = _hist([1.0, 0.995, 0.990, 0.985, 0.980])
+    result = _result()
+    assert gate.evaluate(result, hist) == GateVerdict.COMMIT
+
+    registry = AssetRegistry(mock_cfg, path=tmp_path / "registry.json")
+    registry.register(stub_asset)
+    assert registry.version_of(stub_asset.asset_id) == stub_asset.version
+
+    committed = registry.commit(
+        stub_asset, result.params, scene_tag="scene_a", now_s=100.0, ttl_s=60.0
+    )
+    assert committed.version == stub_asset.version + 1
+    assert committed.material.state == MaterialState.CALIBRATED
+    assert committed.material.scene_tag == "scene_a"
+    assert committed.material.ttl_s == 60.0
+    assert registry.version_of(stub_asset.asset_id) == committed.version
+    assert registry.is_expired(stub_asset.asset_id, now_s=161.0) is True
+    assert registry.is_expired(stub_asset.asset_id, now_s=130.0) is False
+
+
 def test_non_convergence_degrades_after_limit(mock_cfg):
     gate = CalibrationGate(mock_cfg)
     limit = int(mock_cfg.require("calibration.max_interactions_before_degrade"))

@@ -65,11 +65,7 @@ class PhysicsSolver:
         )
         if self._constraints is not None and self._constraint_key == key:
             return self._constraints
-        c = build_constraints(
-            asset.rest_mesh,
-            material,
-            support_stiffness=float(self.cfg.require("physics.support_stiffness")),
-        )
+        c = build_constraints(asset.rest_mesh, material)
         self._constraints = c
         self._constraint_key = key
         return c
