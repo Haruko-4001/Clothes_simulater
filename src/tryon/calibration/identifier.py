@@ -57,6 +57,34 @@ class SystemIdentifier:
         return self.theta, self.P
 
     # ------------------------------------------------------------------
+    def _warp_eval(
+        self,
+        batch: ObservationBatch,
+        theta: np.ndarray,
+        theta0: np.ndarray,
+        P_inv: np.ndarray,
+    ) -> tuple[float, np.ndarray] | None:
+        """(L_total, ∂L_data/∂Θ) from the differentiable Warp rollout (P4)."""
+        from .warp_grad import rollout_loss_and_grad
+
+        out = rollout_loss_and_grad(
+            self.sim.asset,
+            batch,
+            theta,
+            substeps=int(self.cfg.require("physics.substeps")),
+            iters=int(self.cfg.require("physics.xpbd_iters")),
+            attach_relax=float(self.cfg.require("physics.attach_relax")),
+            support_relax=float(self.cfg.require("physics.support_relax")),
+        )
+        if out is None:
+            return None
+        L_data, g_data = out
+        prior = np.asarray(theta, dtype=np.float64) - theta0
+        lam_prior = float(self._weights().lam)
+        L = float(L_data + lam_prior * float(prior @ (P_inv @ prior)))
+        return L, g_data
+
+    # ------------------------------------------------------------------
     def update(self, batch: ObservationBatch) -> IdentificationResult:
         if self.sim is None:
             raise RuntimeError("SystemIdentifier.bind(sim) must be called first")
@@ -77,8 +105,25 @@ class SystemIdentifier:
         eps_J = float(self.cfg.require("calibration.epsilon_J"))
         lo, hi = material_bounds_arrays()
 
+        # P4: reverse-mode Warp gradients replace FD inside the LM loop when
+        # configured; the FD Jacobian still feeds the Fisher/active-mask gates.
+        use_warp_grad = False
+        if str(self.cfg.get("calibration.grad_backend", "fd")) == "warp":
+            try:
+                from .warp_grad import warp_available
+
+                use_warp_grad = warp_available() and getattr(self.sim, "asset", None) is not None
+            except Exception:
+                use_warp_grad = False
+
         L, g, J = compute(batch, self._weights(), theta, theta0, P_inv, self.sim)
         L_before = L
+        if use_warp_grad:
+            wout = self._warp_eval(batch, theta, theta0, P_inv)
+            if wout is None:
+                use_warp_grad = False
+            else:
+                L, g = wout
         active = self._active_mask(J, ablation, eps_J)
         for _ in range(max_iter):
             fisher = fisher_information(J, self._sigma_inv())
@@ -89,12 +134,22 @@ class SystemIdentifier:
             trial[~active] = theta[~active]
             if np.max(np.abs(trial - theta)) < 1.0e-9:
                 break
-            L_trial, g_trial, J_trial = compute(
-                batch, self._weights(), trial, theta0, P_inv, self.sim
-            )
+            if use_warp_grad:
+                wout = self._warp_eval(batch, trial, theta0, P_inv)
+                if wout is None:
+                    use_warp_grad = False
+                    continue
+                L_trial, g_trial = wout
+                J_trial = J
+            else:
+                L_trial, g_trial, J_trial = compute(
+                    batch, self._weights(), trial, theta0, P_inv, self.sim
+                )
             if L_trial < L:
                 rel_improvement = (L - L_trial) / max(L, 1.0e-12)
-                theta, L, g, J = trial, L_trial, g_trial, J_trial
+                theta, L, g = trial, L_trial, g_trial
+                if not use_warp_grad:
+                    J = J_trial
                 lam_LM = max(lam_LM / 3.0, 1.0e-9)
                 if rel_improvement < 1.0e-4:
                     break
@@ -102,6 +157,10 @@ class SystemIdentifier:
                 lam_LM = min(lam_LM * 3.0, 1.0e9)
             if float(np.linalg.norm(delta)) < 1.0e-8:
                 break
+
+        if use_warp_grad:
+            # Final FD pass at the accepted θ so gates see a full Jacobian.
+            L, g, J = compute(batch, self._weights(), theta, theta0, P_inv, self.sim)
 
         active = self._active_mask(J, ablation, eps_J)
         fisher = fisher_information(J, self._sigma_inv())

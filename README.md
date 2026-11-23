@@ -12,7 +12,7 @@ make mock-run
 # 2) 管线 A：单张衣服图冷启动资产（G1 门禁 + 注册表）
 make bootstrap-asset IMG=assets/samples/garment.png
 
-# 3) 全量测试（SPEC §16 的 12 个规格文件 + 2 个回归文件）
+# 3) 全量测试（SPEC §16 的 12 个规格文件 + 3 个回归文件）
 make test
 ```
 
@@ -21,6 +21,9 @@ make test
 ```bash
 make eval-report     # 读取 var/logs/run.jsonl 生成 var/eval/report.{json,md}
 python -m app.cli selfcheck
+
+# P0-P4 引擎栈（可选本地依赖 warp-lang / opencv；缺失自动回退 stub）
+python -m app.main --frames 300 --physics-solver warp --render-backend opencv --geometry silhouette
 ```
 
 ### Windows
@@ -130,7 +133,38 @@ python scripts\make.py test
 
 **已实现（mock 路径）**：数学层、封闭双面壳几何与 G1/G2、XPBD 物理、接触/释放/回弹、四态取景门禁、异步关键帧与 6 帧融合、HUD、三状态机、有限差分雅可比、LM/EKF、三闸门、许可门禁、注册表版本/TTL、12 个测试文件、300 帧主循环。
 
-**未实现（Real 适配器，均回退 Stub 并记 `E_ADAPTER_FALLBACK`）**：SewFormer / GarmentRec / InstantMesh 真实几何、MediaPipe / SMPL-X 真实人体与手部、DiffCloth 可微梯度、3DGS 真实渲染、FASHN / OmniTry / CatVTON 真实生成、VTON 360 / TryOnCrafter（代码未公开/仅设计参考）。逐文件状态、各 Phase 验收结果、歧义裁决请求与许可证标记见 **[`STRUCTURED_REPORT.json`](STRUCTURED_REPORT.json)**（SPEC 附录 G 要求的交付物）。
+**P0–P4 引擎升级（2026-11，本机已验证）**：
+
+| 层 | 新后端 | 配置 / CLI | 状态 |
+|---|---|---|---|
+| 物理 | **Warp XPBD**（`physics/warp_solver.py`，CUDA 或 CPU，无权重无网络；可选 hash-grid 顶点自碰撞） | `physics.solver: warp` 或 `--physics-solver warp` | 已实现 + 测试 |
+| 渲染 | **OpenCV 光栅化**（`render/cv2_render.py`，逐面 `fillConvexPoly` + AA，规避 fillPoly 的 even-odd 重叠空洞） | `render.backend: opencv` 或 `--render-backend opencv` | 已实现 + 测试 |
+| 感知 | **MediaPipe Body/Hand**（33→17 关节映射、D12 时序平滑、单目深度先验为已声明局限） | `mode: real/hybrid`（mediapipe 缺失自动回退 Stub） | 已实现 |
+| 关键帧 | **FASHN v1 REST 客户端**（提交+轮询+下载+差异掩膜；缺 API key 自动回退 Stub） | `keyframe.backend: fashn` + `FASHN_API_KEY` | 已实现 + mock-HTTP 测试 |
+| 几何 | **轮廓驱动放样**（`asset/geometry.py::SilhouetteGeometryEstimator`，掩膜逐行宽度驱动壳体轮廓，不同衣图→不同网格） | `asset.geometry: silhouette` 或 `--geometry silhouette` | 已实现 + G1 IoU 测试 |
+| 辨识 | **Warp 反传梯度**（`calibration/warp_grad.py`，1 次前向+反向替代 LM 内环 8 次前向差分） | `calibration.grad_backend: warp` | 已实现 + 方向一致性测试 |
+
+全部新后端遵循既有 Protocol/工厂模式：依赖缺失时 `ImportError → E_ADAPTER_FALLBACK → Stub`，mock 主循环的"无 GPU/权重/网络"保证不受影响（warp/cv2 为可选本地依赖）。
+
+**本机实测基准**（RTX 5060 Laptop 8GB / warp-lang 1.19 / CUDA 13.4；物理=每秒 60Hz 物理步数，预热排除；口径≠§2.1 目标硬件表，该表仍保持 TODO）：
+
+| 网格 (nu×nv) | 顶点 | numpy XPBD | Warp XPBD |
+|---|---|---|---|
+| 12×9 | 240 | 366 步/s | 532 步/s |
+| 28×20 | 1176 | 67 步/s | **241 步/s** |
+| 40×35 | 2880 | 36 步/s | **210 步/s** |
+
+**端到端 300 帧 A/B**（`[28,20]` 1176 顶点、1080p、`--no-calibration`，仅引擎差异）：
+
+| | 基线 numpy+PIL+stub | P0 栈 warp+cv2+silhouette | 变化 |
+|---|---|---|---|
+| display_fps | 7.5 | **11.0** | +47% |
+| physics_hz（墙钟口径） | 14.9 | **22.0** | +48% |
+| p50 / p95 延迟 | 117.4 / 143.9 ms | **80.0 / 105.3 ms** | -32% / -27% |
+
+结论：`max_vertices: 6000` 预算下 60Hz 物理仅 Warp 后端可达（numpy 在 2880 顶点已跌破 60Hz）；网格越大，端到端差距越大（numpy 物理 O(N) 崩塌 + cv2 渲染 ~2.8×@1176 面）。主循环剩余瓶颈为 1080p 合成相机与 HUD（各 ~7-12ms），属 P0 之外的后续优化项。
+
+**未实现（Real 适配器，均回退 Stub 并记 `E_ADAPTER_FALLBACK`）**：SewFormer / GarmentRec / InstantMesh 真实几何、SMPL-X β/θ 网格拟合、WiLoR / HaMeR 手部、DiffCloth 求解器（管线 C 已由 warp_grad 提供反传梯度）、3DGS 真实渲染、本地 CatVTON / IDM-VTON / OmniTry / Leffa（NC 许可，未捆绑）、VTON 360 / TryOnCrafter（代码未公开/仅设计参考）、点-三角自碰撞（现为顶点级 hash-grid 近似，`physics.self_collision` 门控）。逐文件状态、各 Phase 验收结果、歧义裁决请求与许可证标记见 **[`STRUCTURED_REPORT.json`](STRUCTURED_REPORT.json)**（SPEC 附录 G 要求的交付物）。
 
 **真实接入**：
 
@@ -149,9 +183,9 @@ SPEC §16 / §19 / 附录 E 规定 **12 个规格测试文件**，数量不变�
 
 `test_math / test_types / test_asset_stub / test_physics_stub / test_state_machines / test_framing_gate / test_calibration_gates / test_identifiability / test_fps_bookkeeping / test_fusion / test_license_gate / test_end_to_end_mock`
 
-另有 **2 个额外回归文件**（不属于 §16 的规格矩阵，已在 `STRUCTURED_REPORT.json` 的 `deviations` 中登记）：
+另有 **3 个额外回归文件**（不属于 §16 的规格矩阵，已在 `STRUCTURED_REPORT.json` 的 `deviations` 中登记）：
 
-`test_json_safety`（严格 JSON 输出）/ `test_make_runner`（Windows 入口参数透传）
+`test_json_safety`（严格 JSON 输出）/ `test_make_runner`（Windows 入口参数透传）/ `test_engine_adapters`（P0–P4 引擎后端：Warp 物理、OpenCV 渲染、MediaPipe 追踪、FASHN 客户端、轮廓几何、Warp 反传梯度）
 
 ## 逐 Phase 验收（无 GNU make / Windows）
 

@@ -33,7 +33,14 @@ physics:                         # §10.1
   attach_relax: 0.35            # dimensionless XPBD relaxation, hand attachment
   max_substep_delta_m: 0.05     # clamp per-substep displacement
   energy_settle_j: 1.0e-3       # E_min for REBOUNDING → IDLE
-render: {backend: stub, scale: 1.0}   # scale<1 renders the mesh layer at reduced resolution
+  self_collision: false          # vertex-vertex hash-grid repulsion (Warp solver)
+  self_collision_radius_m: 0.004
+perception:                      # P1 real adapters (real/hybrid mode)
+  body_backend: mediapipe        # mediapipe|legacy
+  hand_backend: mediapipe        # mediapipe|legacy
+  body_depth_m: 1.9               # monocular depth prior (documented limitation)
+  hand_depth_m: 1.7
+render: {backend: stub, scale: 1.0}   # stub|opencv; scale<1 renders at reduced resolution
 keyframe:
   max_queue: 2
   stable_ms: 800                 # T_stable
@@ -45,8 +52,12 @@ keyframe:
   alpha0: 0.55
   tau_fuse_ms: 260
   backend: stub                  # stub|fashn_vton_1_5|catvton|leffa|omnitry
+  fashn_api_key: ""              # or env FASHN_API_KEY
+  fashn_timeout_s: 120.0
+  fashn_poll_s: 2.0
+  fashn_category: tops
 asset:
-  geometry: stub                 # stub|sewformer|instantmesh|garmentrec
+  geometry: stub                 # stub|silhouette|sewformer|instantmesh|garmentrec
   material_prior: dictionary
   offline_timeout_s: 300
   back_confidence_threshold: 0.65   # τ_back
@@ -57,6 +68,7 @@ asset:
   mesh_resolution: [12, 9]          # [around, height] skeleton resolution (capped by physics.max_vertices)
 calibration:                     # §10.3
   params: [youngs_modulus, damping, bending_stiffness, areal_density]
+  grad_backend: fd               # fd|warp (P4: reverse-mode LM gradients)
   max_params_per_batch: 6
   window_frames: 90
   max_iter: 8

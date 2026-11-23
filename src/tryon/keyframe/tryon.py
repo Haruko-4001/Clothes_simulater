@@ -4,10 +4,15 @@ IMPL: src/tryon/keyframe/tryon.py::KeyframeTryOn
 """
 from __future__ import annotations
 
+import base64
+import io
+import json
 import math
+import os
 import queue
 import threading
 import time
+import urllib.request
 from typing import Any
 
 import numpy as np
@@ -25,6 +30,15 @@ def _foreground_mask(image: np.ndarray) -> np.ndarray:
     bg = np.median(border, axis=0)
     dist = np.linalg.norm(arr - bg[None, None, :], axis=2)
     return (dist > 18.0).astype(np.uint8)
+
+
+def _fit_to(image: np.ndarray, reference: np.ndarray) -> np.ndarray:
+    """Resize a generated image to the reference shape (nearest-safe)."""
+    if image.shape[:2] == reference.shape[:2]:
+        return image
+    img = Image.fromarray(np.asarray(image, dtype=np.uint8))
+    img = img.resize((reference.shape[1], reference.shape[0]), Image.BILINEAR)
+    return np.asarray(img)
 
 
 class StubKeyframeTryOn:
@@ -77,21 +91,105 @@ KeyframeTryOn = StubKeyframeTryOn
 
 
 class FashnTryOn:
-    """Default real backend (Apache-2.0, mask-free). Guarded integration point."""
+    """FASHN VTON v1.5 REST client (mask-free, Apache-2.0 backend).
+
+    Requires an API key: config ``keyframe.fashn_api_key`` or env
+    ``FASHN_API_KEY``. Missing key raises ImportError so the factory falls
+    back to the stub (E_ADAPTER_FALLBACK). ``_opener`` / ``_sleep`` are
+    injectable for tests; no other network plumbing exists.
+    """
+
+    BASE_URL = "https://api.fashn.ai/v1"
 
     def __init__(self, cfg: Config | None = None) -> None:
         self.cfg = cfg
-        try:
-            import fashn_vton  # type: ignore  # noqa: F401
-        except Exception as exc:  # pragma: no cover
-            raise ImportError("fashn-vton is not installed") from exc
-        raise ImportError(
-            "FASHN VTON adapter is a guarded integration point (Phase 5); "
-            "falling back to stub keyframe generation"
-        )
+        api_key = None
+        if cfg is not None:
+            api_key = cfg.get("keyframe.fashn_api_key")
+        if not api_key:
+            api_key = os.environ.get("FASHN_API_KEY")
+        if not api_key:
+            raise ImportError(
+                "FASHN API key missing: set keyframe.fashn_api_key or FASHN_API_KEY"
+            )
+        self._api_key = str(api_key)
+        self._timeout_s = float(cfg.get("keyframe.fashn_timeout_s", 120.0)) if cfg else 120.0
+        self._poll_s = float(cfg.get("keyframe.fashn_poll_s", 2.0)) if cfg else 2.0
+        self._category = str(cfg.get("keyframe.fashn_category", "tops")) if cfg else "tops"
+        self._opener = urllib.request.urlopen
+        self._sleep = time.sleep
 
-    def generate(self, req: KeyframeRequest) -> KeyframeResult:  # pragma: no cover
-        raise NotImplementedError("FASHN VTON adapter not implemented")
+    # ------------------------------------------------------------------
+    def _request(self, url: str, payload: dict | None = None) -> dict:
+        data = None if payload is None else json.dumps(payload).encode("utf-8")
+        req = urllib.request.Request(
+            url,
+            data=data,
+            headers={
+                "Authorization": f"Bearer {self._api_key}",
+                "Content-Type": "application/json",
+            },
+            method="GET" if data is None else "POST",
+        )
+        with self._opener(req, timeout=30) as resp:
+            return json.loads(resp.read().decode("utf-8"))
+
+    @staticmethod
+    def _png_data_url(image: np.ndarray) -> str:
+        img = Image.fromarray(np.asarray(image, dtype=np.uint8).copy()).convert("RGB")
+        buf = io.BytesIO()
+        img.save(buf, format="PNG")
+        return "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode("ascii")
+
+    # ------------------------------------------------------------------
+    def generate(self, req: KeyframeRequest) -> KeyframeResult:
+        payload = {
+            "model_image": self._png_data_url(req.person_image),
+            "garment_image": self._png_data_url(req.garment_image),
+            "category": self._category,
+        }
+        job = self._request(f"{self.BASE_URL}/run", payload)
+        job_id = str(job.get("id", ""))
+        if not job_id:
+            raise TryonError("E_KF_TIMEOUT", "FASHN returned no job id")
+
+        deadline = time.monotonic() + self._timeout_s
+        output_url = None
+        while time.monotonic() < deadline:
+            self._sleep(self._poll_s)
+            status = self._request(f"{self.BASE_URL}/run/{job_id}")
+            state = str(status.get("status", ""))
+            if state == "completed":
+                outputs = status.get("output") or []
+                if outputs:
+                    output_url = str(outputs[0])
+                break
+            if state == "failed":
+                raise TryonError(
+                    "E_KF_TIMEOUT",
+                    f"FASHN job {job_id} failed: {status.get('error', '')}",
+                )
+        if output_url is None:
+            raise TryonError("E_KF_TIMEOUT", f"FASHN job {job_id} did not finish in time")
+
+        with self._opener(urllib.request.Request(output_url), timeout=60) as resp:
+            arr = np.asarray(bytearray(resp.read()), dtype=np.uint8)
+        image = np.asarray(Image.open(io.BytesIO(arr.tobytes())).convert("RGB"))
+        image = _fit_to(image, np.asarray(req.person_image))
+
+        person = np.asarray(req.person_image)
+        diff = np.abs(image.astype(np.int16) - person.astype(np.int16)).max(axis=2)
+        mask = (diff > 12).astype(np.uint8)
+        region = np.asarray(req.mask) > 0 if np.asarray(req.mask).shape == mask.shape else None
+        if region is not None:
+            mask &= region.astype(np.uint8)
+        return KeyframeResult(
+            req_id=req.req_id,
+            image=image,
+            mask=mask,
+            finished_at_ms=time.time() * 1000.0,
+            expired=False,
+        )
 
 
 class KeyframeService:

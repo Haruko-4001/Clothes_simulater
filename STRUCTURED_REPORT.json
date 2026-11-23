@@ -207,12 +207,15 @@
     },
     {
       "path": "src/tryon/asset/geometry.py",
-      "status": "NOT_IMPLEMENTED",
+      "status": "REAL",
       "category": "code",
       "symbols": [
         "GeometryEstimator",
-        "InstantMeshBackPrior"
-      ]
+        "InstantMeshBackPrior",
+        "SilhouetteGeometryEstimator",
+        "silhouette_profile"
+      ],
+      "notes": "P3: SilhouetteGeometryEstimator lofts the shell from the segmentation's per-row extents (image-driven, pure numpy, mock-usable); SewFormer/InstantMesh adapters remain guarded integration points"
     },
     {
       "path": "src/tryon/asset/material_prior.py",
@@ -486,15 +489,16 @@
     },
     {
       "path": "src/tryon/keyframe/tryon.py",
-      "status": "STUB",
+      "status": "REAL",
       "category": "code",
       "symbols": [
         "_foreground_mask",
+        "_fit_to",
         "StubKeyframeTryOn",
         "FashnTryOn",
         "KeyframeService"
       ],
-      "notes": "StubKeyframeTryOn is delivered; FashnTryOn Real adapter raises NotImplementedError and is listed in not_implemented"
+      "notes": "P2: FashnTryOn is a full FASHN v1 REST client (submit + poll + download + diff-mask), injectable opener/sleep for tests; requires keyframe.fashn_api_key or FASHN_API_KEY, else ImportError -> stub fallback. Local CatVTON/IDM-VTON remain not integrated (NC licenses + weights download)"
     },
     {
       "path": "src/tryon/logging.py",
@@ -585,11 +589,13 @@
     },
     {
       "path": "src/tryon/perception/body.py",
-      "status": "NOT_IMPLEMENTED",
+      "status": "REAL",
       "category": "code",
       "symbols": [
-        "BodyTracker"
-      ]
+        "BodyTracker",
+        "MediaPipeBodyTracker"
+      ],
+      "notes": "P1: MediaPipeBodyTracker implemented (33->17-joint mapping, D12 temporal smoothing, facing/occlusion from landmark geometry, monocular depth prior documented as a limitation); falls back to StubBodyTracker when mediapipe is absent"
     },
     {
       "path": "src/tryon/perception/camera.py",
@@ -620,11 +626,13 @@
     },
     {
       "path": "src/tryon/perception/hands.py",
-      "status": "NOT_IMPLEMENTED",
+      "status": "REAL",
       "category": "code",
       "symbols": [
-        "HandTracker"
-      ]
+        "HandTracker",
+        "MediaPipeHandTracker"
+      ],
+      "notes": "P1: MediaPipeHandTracker implemented (21 landmarks -> world frame via config depth prior, handedness passthrough, occlusion hold on lost detection); falls back to StubHandTracker when mediapipe is absent"
     },
     {
       "path": "src/tryon/perception/stubs.py",
@@ -771,10 +779,45 @@
       ]
     },
     {
+      "path": "src/tryon/render/cv2_render.py",
+      "status": "REAL",
+      "category": "code",
+      "symbols": [
+        "OpenCVMeshRenderer",
+        "garment_mean_color"
+      ],
+      "notes": "P0b: batched OpenCV rasteriser; per-face fillConvexPoly (even-odd-safe) + AA; falls back to PIL via factory when opencv is absent"
+    },
+    {
       "path": "src/tryon/render/stubs.py",
       "status": "STUB",
       "category": "code",
       "symbols": []
+    },
+    {
+      "path": "src/tryon/physics/warp_solver.py",
+      "status": "REAL",
+      "category": "code",
+      "symbols": [
+        "WarpSolver",
+        "_predict_kernel",
+        "_constraint_kernel",
+        "_project_kernel",
+        "_friction_kernel",
+        "_self_collision_kernel"
+      ],
+      "notes": "P0a: NVIDIA-Warp XPBD mirroring physics.integrator (Jacobi + degree under-relaxation + Rayleigh damping + ellipsoid contact); CPU or CUDA, no weights/network; optional hash-grid vertex self-collision; falls back to PhysicsSolver when warp is absent"
+    },
+    {
+      "path": "src/tryon/calibration/warp_grad.py",
+      "status": "REAL",
+      "category": "code",
+      "symbols": [
+        "rollout_loss_and_grad",
+        "warp_available",
+        "_frame_attachments"
+      ],
+      "notes": "P4: reverse-mode differentiable XPBD rollout on a Warp tape; (L, dL/dTheta) in one forward+backward pass; Poisson/thickness have zero gradient by construction (documented); FD path remains for Fisher/gates"
     },
     {
       "path": "src/tryon/types.py",
@@ -993,6 +1036,23 @@
       ]
     },
     {
+      "path": "tests/test_engine_adapters.py",
+      "status": "REAL",
+      "category": "test",
+      "symbols": [
+        "_engine_cfg",
+        "TestWarpSolverSemantics",
+        "test_factory_routes_warp_solver_or_falls_back",
+        "test_factory_routes_opencv_renderer",
+        "test_opencv_renderer_matches_pil_coverage",
+        "test_fashn_generate_with_mocked_http",
+        "test_silhouette_geometry_varies_with_input",
+        "test_warp_grad_direction_matches_fd",
+        "test_identifier_warp_backend_descends_on_surrogate"
+      ],
+      "notes": "Extra regression file for the P0-P4 engine adapters (warp/cv2/mediapipe/fashn/silhouette/warp-grad); warp/cv2 tests skip when the optional dependency is absent"
+    },
+    {
       "path": "var/logs/run.jsonl",
       "status": "REAL",
       "category": "data",
@@ -1044,13 +1104,14 @@
     }
   ],
   "not_implemented": [
-    "Real GeometryEstimator (SewFormer / GarmentRec / InstantMesh)",
-    "Real BodyTracker (MediaPipe / SMPL-X)",
-    "Real HandTracker (MediaPipe Hands / WiLoR / HaMeR)",
-    "DiffClothSolver (differentiable cloth gradients)",
+    "Real GeometryEstimator (SewFormer / GarmentRec / InstantMesh) — SilhouetteGeometryEstimator (image-driven lofting) IS delivered as the mock-usable P3 step",
+    "SMPL-X body fitting (MediaPipeBodyTracker delivered for P1; SMPL-X mesh/β,θ fitting remains open)",
+    "WiLoR / HaMeR hand models (MediaPipeHandTracker delivered for P1)",
+    "DiffClothSolver (guarded integration point; warp_grad.py now provides reverse-mode cloth gradients for pipeline C)",
     "GaussianSplatRenderer (3DGS)",
-    "FashnTryOn real keyframe generation (and CatVTON / OmniTry / Leffa)",
+    "Local CatVTON / IDM-VTON / OmniTry / Leffa keyframe backends (FashnTryOn REST client IS delivered; local VTON weights are NC-licensed and not bundled)",
     "VTON 360 / TryOnCrafter arbitrary-view rendering (code not public; design reference only)",
+    "Point-triangle self-collision (vertex-vertex hash-grid repulsion delivered behind physics.self_collision)",
     "Target-hardware measurements (all rows NOT_MEASURED by design, §17.10)"
   ],
   "ambiguities": [
@@ -1079,11 +1140,15 @@
   "deviations": [
     {
       "spec_ref": "§16 / §19 / Appendix E",
-      "description": "SPEC mandates 12 test files; the tree has 14. The 12 §16 files are unchanged; test_json_safety.py and test_make_runner.py are additional regression files for a strict-JSON fix and a Windows-runner fix. The SPEC count was not edited."
+      "description": "SPEC mandates 12 test files; the tree has 15. The 12 §16 files are unchanged; test_json_safety.py, test_make_runner.py and test_engine_adapters.py are additional regression files (strict-JSON fix, Windows-runner fix, P0-P4 engine adapters). The SPEC count was not edited."
+    },
+    {
+      "spec_ref": "§12 config template",
+      "description": "configs/default.yaml adds engine-backend keys introduced by the P0-P4 adapters: physics.self_collision[_radius_m], perception.{body_backend,hand_backend,body_depth_m,hand_depth_m}, render.backend opencv value, keyframe.fashn_* client keys, calibration.grad_backend (fd|warp), asset.geometry silhouette value. All are consumed by the adapters that read them; no second threshold copy exists (§0.2)."
     },
     {
       "spec_ref": "§4 directory structure",
-      "description": "Extra files not listed in §4: .gitignore, .gitattributes, STRUCTURED_REPORT.json, scripts/make.py, make.cmd, the two extra regression tests, var/logs/run.jsonl, assets/samples/garment.png. All are documentation/build/data artefacts required for a working delivery; no §4 file is missing."
+      "description": "Extra files not listed in §4: .gitignore, .gitattributes, STRUCTURED_REPORT.json, scripts/make.py, make.cmd, the extra regression tests, var/logs/run.jsonl, assets/samples/garment.png, and the P0-P4 engine modules physics/warp_solver.py, render/cv2_render.py, calibration/warp_grad.py. All are documentation/build/data/engine artefacts required for a working delivery; no §4 file is missing."
     },
     {
       "spec_ref": "§12 config template",

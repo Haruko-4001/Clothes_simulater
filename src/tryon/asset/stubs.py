@@ -71,19 +71,44 @@ def build_shell_mesh(
     nu, nv = int(resolution[0]), int(resolution[1])
     if nu < 6 or nv < 3:
         raise ValueError("resolution too small for a shell garment")
+    profile = np.zeros((nv + 1, 3), dtype=np.float64)
+    for j in range(nv + 1):
+        rx, rz, y = _ellipse_profile(j / nv)
+        profile[j] = (rx, rz, y)
+    return build_shell_from_profile(profile, nu, thickness=thickness)
+
+
+def build_shell_from_profile(
+    profile: np.ndarray,
+    nu: int,
+    thickness: float = 1.0e-3,
+) -> tuple[SimReadyMesh, ShellTopology, np.ndarray]:
+    """Loft a closed double-sided shell from per-row (rx, rz, y) rings.
+
+    ``profile`` has one row per ring, hem first (index 0) → neck last. Ring
+    shapes are scaled ellipses ``(x/rx)² + (z/rz)² = 1``; the topology matches
+    ``build_shell_mesh`` (outer + inner + welded rims), so the XPBD layer and
+    the repair gate treat both builders identically.
+    """
+    profile = np.asarray(profile, dtype=np.float64)
+    if profile.ndim != 2 or profile.shape[1] != 3 or len(profile) < 2:
+        raise ValueError("profile must be (nv+1, 3) rows of (rx, rz, y)")
+    if nu < 6:
+        raise ValueError("nu too small for a shell garment")
+    if np.any(profile[:, 0] <= 0.0) or np.any(profile[:, 1] <= 0.0):
+        raise ValueError("profile radii must be positive")
+    nv = len(profile) - 1
     topo = ShellTopology(nu=nu, nv=nv, outer_offset=0, inner_offset=nu * (nv + 1), n_outer_per_row=nu)
     n_outer = nu * (nv + 1)
     vertices = np.zeros((2 * n_outer, 3), dtype=np.float64)
     normals = np.zeros((2 * n_outer, 3), dtype=np.float64)
 
     for j in range(nv + 1):
-        t = j / nv
-        rx, rz, y = _ellipse_profile(t)
+        rx, rz, y = profile[j]
         for i in range(nu):
             theta = 2.0 * math.pi * i / nu
             c, s = math.cos(theta), math.sin(theta)
             p = np.array([rx * c, y, rz * s], dtype=np.float64)
-            # Outward normal of the ellipse x²/rx² + z²/rz² = 1.
             grad = np.array([2.0 * p[0] / (rx * rx), 0.0, 2.0 * p[2] / (rz * rz)])
             n = grad / max(float(np.linalg.norm(grad)), 1.0e-12)
             o = topo.outer(j, i)
@@ -101,12 +126,9 @@ def build_shell_mesh(
     for j in range(nv):
         for i in range(nu):
             i1 = (i + 1) % nu
-            # Outer surface (outward winding).
             quad(topo.outer(j, i), topo.outer(j, i1), topo.outer(j + 1, i1), topo.outer(j + 1, i))
-            # Inner surface (reversed winding).
             quad(topo.inner(j, i), topo.inner(j + 1, i), topo.inner(j + 1, i1), topo.inner(j, i1))
 
-    # Bottom rim (hem) and top rim (neck): weld outer to inner.
     for i in range(nu):
         i1 = (i + 1) % nu
         quad(topo.outer(0, i), topo.inner(0, i), topo.inner(0, i1), topo.outer(0, i1))
@@ -297,6 +319,7 @@ class StubGeometryEstimator:
 __all__ = [
     "ShellTopology",
     "build_shell_mesh",
+    "build_shell_from_profile",
     "analyze_topology",
     "shell_support_vertices",
     "StubSegmenter",

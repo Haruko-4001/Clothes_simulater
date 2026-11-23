@@ -667,9 +667,16 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--log", default=str(REPO_ROOT / "var" / "logs" / "run.jsonl"))
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--no-keyframes", action="store_true")
+    parser.add_argument("--no-calibration", action="store_true",
+                        help="disable pipeline C (pure engine benchmark; no spawn worker)")
     parser.add_argument("--width", type=int, default=None)
     parser.add_argument("--height", type=int, default=None)
     parser.add_argument("--config-dir", default=None)
+    # P0-P3 engine-backend overrides (local deps only; no weights/network).
+    parser.add_argument("--physics-solver", default=None, choices=["stub_xpbd", "warp"])
+    parser.add_argument("--render-backend", default=None, choices=["stub", "opencv"])
+    parser.add_argument("--geometry", default=None, choices=["stub", "silhouette"])
+    parser.add_argument("--mesh-resolution", nargs=2, type=int, default=None, metavar=("AROUND", "HEIGHT"))
     return parser.parse_args(argv)
 
 
@@ -680,6 +687,14 @@ def main(argv: list[str] | None = None) -> int:
         cfg.set("camera.width", int(args.width))
     if args.height:
         cfg.set("camera.height", int(args.height))
+    if args.physics_solver:
+        cfg.set("physics.solver", args.physics_solver)
+    if args.render_backend:
+        cfg.set("render.backend", args.render_backend)
+    if args.geometry:
+        cfg.set("asset.geometry", args.geometry)
+    if args.mesh_resolution:
+        cfg.set("asset.mesh_resolution", [int(args.mesh_resolution[0]), int(args.mesh_resolution[1])])
     cfg.set("mode", args.mode or cfg.get("mode"))
     if args.gui:
         args.headless = False
@@ -691,6 +706,7 @@ def main(argv: list[str] | None = None) -> int:
         headless=args.headless,
         seed=args.seed,
         enable_keyframes=not args.no_keyframes,
+        enable_calibration=not args.no_calibration,
     )
     summary = runner.run(args.frames)
     print(dumps_json(summary, indent=2))
