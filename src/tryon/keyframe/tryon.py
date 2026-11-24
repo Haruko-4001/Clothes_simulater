@@ -93,10 +93,17 @@ KeyframeTryOn = StubKeyframeTryOn
 class FashnTryOn:
     """FASHN VTON v1.5 REST client (mask-free, Apache-2.0 backend).
 
-    Requires an API key: config ``keyframe.fashn_api_key`` or env
-    ``FASHN_API_KEY``. Missing key raises ImportError so the factory falls
-    back to the stub (E_ADAPTER_FALLBACK). ``_opener`` / ``_sleep`` are
-    injectable for tests; no other network plumbing exists.
+    Enabling it requires all three of: ``mode: real|hybrid``,
+    ``keyframe.backend: fashn``, and an API key from
+    ``configs/local.yaml`` (git-ignored) or the ``FASHN_API_KEY`` env var.
+    Without a key this raises ImportError so the factory falls back to the
+    stub (E_ADAPTER_FALLBACK).
+
+    Privacy: generate() uploads the person frame and the garment image to
+    api.fashn.ai. There is no offline mode for this backend.
+
+    ``_opener`` / ``_sleep`` are injectable for tests; no other network
+    plumbing exists.
     """
 
     BASE_URL = "https://api.fashn.ai/v1"
@@ -110,7 +117,8 @@ class FashnTryOn:
             api_key = os.environ.get("FASHN_API_KEY")
         if not api_key:
             raise ImportError(
-                "FASHN API key missing: set keyframe.fashn_api_key or FASHN_API_KEY"
+                "FASHN API key missing: set keyframe.fashn_api_key in "
+                "configs/local.yaml (git-ignored) or export FASHN_API_KEY"
             )
         self._api_key = str(api_key)
         self._timeout_s = float(cfg.get("keyframe.fashn_timeout_s", 120.0)) if cfg else 120.0

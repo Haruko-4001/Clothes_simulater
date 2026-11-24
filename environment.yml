@@ -1,3 +1,8 @@
+# Base environment: mock-first path (numpy + Pillow + PyYAML), no GPU needed.
+# For the optional P0 engine backends run:  make install-engine
+# or:  python -m pip install -e ".[test,engine]"
+# For P1 MediaPipe tracking:  python -m pip install -e ".[perception]"
+# (mediapipe has no CPython 3.13 wheels; pin python=3.12 if you need it).
 name: tryon
 channels:
   - conda-forge

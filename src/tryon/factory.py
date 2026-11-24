@@ -39,12 +39,22 @@ from .render.mesh_render import PILMeshRenderer
 
 
 def _try(primary, stub, label: str, *args, **kwargs):
+    """Instantiate an optional backend, falling back to the stub on failure.
+
+    A missing dependency raises ImportError, but backends also fail for
+    runtime reasons: no CUDA device or a driver mismatch for Warp, a stripped
+    OpenCV build, MediaPipe's legacy Solutions API disappearing, or a bad
+    credential. Catching only ImportError/NotImplementedError turned those
+    into hard crashes mid-initialisation (SPEC §8 wants E_ADAPTER_FALLBACK).
+    Any exception during construction is therefore treated as "backend
+    unavailable", logged with its type, and the stub is used instead.
+    """
     try:
         return primary(*args, **kwargs)
-    except ImportError as exc:
-        log_event("E_ADAPTER_FALLBACK", f"{label}: {exc}")
     except NotImplementedError as exc:
-        log_event("E_ADAPTER_FALLBACK", f"{label}: {exc}")
+        log_event("E_ADAPTER_FALLBACK", f"{label}: {type(exc).__name__}: {exc}")
+    except Exception as exc:  # noqa: BLE001 - adapter boundary, by design
+        log_event("E_ADAPTER_FALLBACK", f"{label}: {type(exc).__name__}: {exc}")
     return stub(*args, **kwargs)
 
 
@@ -57,6 +67,14 @@ def build(cfg: Config) -> dict[str, Any]:
     if mode in {"real", "hybrid"}:
         segmenter = _try(Segmenter, StubSegmenter, "Segmenter", cfg)
         geometry = _try(GeometryEstimator, StubGeometryEstimator, "GeometryEstimator", cfg)
+    elif str(cfg.get("asset.geometry", "stub")) == "pattern":
+        # Pattern cold start: panels + seams (sleeves, armholes). Pure numpy.
+        from .asset.pattern import PatternGeometryEstimator
+
+        segmenter = StubSegmenter(cfg)
+        geometry = _try(
+            PatternGeometryEstimator, StubGeometryEstimator, "GeometryEstimator", cfg
+        )
     elif str(cfg.get("asset.geometry", "stub")) == "silhouette":
         # Pure-numpy image-driven lofting: usable in mock (no weights/network).
         segmenter = StubSegmenter(cfg)
@@ -91,6 +109,14 @@ def build(cfg: Config) -> dict[str, Any]:
         hand_tracker = StubHandTracker(cfg)
     framing = FramingGate(cfg)
     contact = ContactExtractor(cfg)
+    # A real webcam paired with synthetic trackers is a silent mismatch: the
+    # scripted skeleton would be projected onto real footage. Surface it.
+    if isinstance(camera, RealCamera) and isinstance(body_tracker, StubBodyTracker):
+        log_event(
+            "E_ADAPTER_FALLBACK",
+            "camera is real but BodyTracker is a stub: install the perception "
+            "extra (Python 3.10-3.12) for meaningful framing/physics",
+        )
 
     # Physics ------------------------------------------------------------
     physics_backend = str(cfg.get("physics.solver", "stub_xpbd"))

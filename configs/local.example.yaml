@@ -1,0 +1,18 @@
+# Copy to configs/local.yaml to override machine-local settings.
+# configs/local.yaml is git-ignored, so credentials placed here never enter
+# version control. Precedence: default < hardware/<hw> < <mode> < local < CLI.
+#
+# FASHN VTON is an opt-in third-party service. Enabling it sends the camera
+# frame and the garment image to api.fashn.ai; review their terms of service
+# and data-handling policy before use. Required: mode real|hybrid,
+# keyframe.backend, and an API key (here or in FASHN_API_KEY).
+
+keyframe:
+  # backend: fashn
+  fashn_api_key: ""
+
+# Example: pin the engine backends on a GPU machine.
+# physics:
+#   solver: warp
+# render:
+#   backend: opencv

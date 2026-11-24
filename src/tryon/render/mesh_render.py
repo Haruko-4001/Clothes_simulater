@@ -10,12 +10,12 @@ from PIL import Image, ImageDraw
 from ..config import Config
 from ..math import project
 from ..types import Frame, GarmentAsset, PhysicsState, RenderOutput
+from .texture import garment_face_colors
 
 
 class PILMeshRenderer:
     def __init__(self, cfg: Config) -> None:
         self.cfg = cfg
-        self._color_cache: dict[str, tuple[int, int, int]] = {}
 
     def render(
         self,
@@ -73,7 +73,9 @@ class PILMeshRenderer:
         light = np.array([0.35, 0.80, 0.48], dtype=np.float64)
         light /= np.linalg.norm(light)
         shade = 0.55 + 0.45 * np.abs(normals @ light)
-        base = np.array(self._garment_color(asset), dtype=np.float64)
+        # Per-face colour sampled through the garment UVs; a single mean colour
+        # discarded every stripe and print in the source photo.
+        face_colors = garment_face_colors(asset)
 
         pil = Image.new("RGB", (sw, sh), (0, 0, 0)) if scale < 1.0 else Image.fromarray(original)
         draw = ImageDraw.Draw(pil)
@@ -92,7 +94,7 @@ class PILMeshRenderer:
                 continue
             if max(p[1] for p in xy) < 0 or min(p[1] for p in xy) > sh:
                 continue
-            col = np.clip(base * shade[fi], 0, 255).astype(np.uint8)
+            col = np.clip(face_colors[fi] * shade[fi], 0, 255).astype(np.uint8)
             colour = (int(col[0]), int(col[1]), int(col[2]))
             draw.polygon(xy, fill=colour)
             mdraw.polygon(xy, fill=255)
@@ -114,28 +116,6 @@ class PILMeshRenderer:
         if xs.size:
             bbox = (int(xs.min()), int(ys.min()), int(xs.max()) + 1, int(ys.max()) + 1)
         return RenderOutput(image=image, mask=mask, coverage_bbox=bbox)
-
-    # ------------------------------------------------------------------
-    def _garment_color(self, asset: GarmentAsset) -> tuple[int, int, int]:
-        cached = self._color_cache.get(asset.asset_id)
-        if cached is not None:
-            return cached
-        colour = (78, 115, 158)
-        appearance = asset.appearance_mesh
-        src = getattr(appearance, "source_image", None)
-        if src is not None:
-            arr = np.asarray(src, dtype=np.float64)
-            border = np.concatenate(
-                [arr[0, :, :], arr[-1, :, :], arr[:, 0, :], arr[:, -1, :]], axis=0
-            )
-            bg = np.median(border, axis=0)
-            dist = np.linalg.norm(arr - bg[None, None, :], axis=2)
-            fg = arr[dist > 18.0]
-            if fg.size:
-                mean = fg.mean(axis=0)
-                colour = (int(mean[0]), int(mean[1]), int(mean[2]))
-        self._color_cache[asset.asset_id] = colour
-        return colour
 
 
 __all__ = ["PILMeshRenderer"]

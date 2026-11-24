@@ -313,6 +313,9 @@ class MeshRepairer:
             has_isolated_edge=False,
             self_intersection_count=0,
             collision_ready=True,
+            # Seams are pattern data, not topology: repair only drops faces and
+            # must not silently disconnect sleeves from the body.
+            seams=getattr(draft.rest_mesh, "seams", None),
         )
 
 

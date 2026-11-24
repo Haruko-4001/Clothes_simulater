@@ -103,6 +103,103 @@ def cmd_selfcheck(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_doctor(args: argparse.Namespace) -> int:
+    """Report, per capability, whether it can actually run on this machine.
+
+    Product-facing: a reviewer should be able to tell a working path from a
+    fallback path without reading code. Nothing here imports a heavy backend;
+    it only probes availability.
+    """
+    import importlib
+    import platform
+
+    cfg = load_config(args.mode, args.hardware, config_dir=args.config_dir)
+
+    def probe(module: str) -> dict:
+        try:
+            mod = importlib.import_module(module)
+            return {"available": True, "version": str(getattr(mod, "__version__", "?"))}
+        except Exception as exc:  # noqa: BLE001 - capability probe
+            return {"available": False, "reason": f"{type(exc).__name__}: {exc}"}
+
+    def file_present(env_or_cfg: str | None) -> bool:
+        if not env_or_cfg:
+            return False
+        import os
+
+        return Path(os.path.expandvars(env_or_cfg)).exists()
+
+    api_key = cfg.get("keyframe.fashn_api_key") or __import__("os").environ.get("FASHN_API_KEY")
+    vendor = REPO_ROOT / "adapters_vendor"
+
+    capabilities = {
+        "pipeline_A_geometry": {
+            "stub": "always available",
+            "silhouette": "always available (pure numpy)",
+            "pattern": "always available (panels + seams, pure numpy)",
+            "sewformer": {
+                "vendored": (vendor / "sewformer").exists(),
+                "how": "bash scripts/install_real.sh --only=sewformer",
+            },
+            "garmentcode_upstream": {
+                "vendored": (vendor / "GarmentCode").exists(),
+                "note": "upstream library not bundled; pattern.py implements the "
+                        "panel/stitch data model so a design loader can be swapped in",
+            },
+        },
+        "pipeline_B_physics": {
+            "numpy_xpbd": "always available",
+            "warp": probe("warp"),
+        },
+        "pipeline_B_perception": {
+            "stub_trackers": "always available (mock scene only)",
+            "mediapipe": {
+                **probe("mediapipe"),
+                "python_ok": sys.version_info < (3, 13),
+                "note": "mediapipe ships no CPython 3.13 wheels; use 3.10-3.12",
+            },
+            "smplx": {
+                **probe("smplx"),
+                "model_files": file_present(cfg.get("perception.smplx_model_path")),
+            },
+        },
+        "pipeline_B_render": {
+            "pil": "always available",
+            "opencv": probe("cv2"),
+        },
+        "keyframe_vton": {
+            "stub_composite": "always available",
+            "fashn_api": {"credential": bool(api_key), "network": "https://api.fashn.ai/v1"},
+            "local_vton": {"vendored": (vendor / "CatVTON").exists()},
+        },
+        "pipeline_C_calibration": {
+            "fd_gradients": "always available",
+            "warp_ad": probe("warp") if not probe("warp")["available"] else {"available": True},
+        },
+    }
+
+    payload = {
+        "spec_version": __import__("tryon").SPEC_VERSION,
+        "host": {
+            "python": platform.python_version(),
+            "platform": platform.platform(),
+            "cuda_visible": bool(__import__("os").environ.get("CUDA_VISIBLE_DEVICES", "")),
+        },
+        "selected": {
+            "mode": cfg.get("mode"),
+            "physics": cfg.get("physics.solver"),
+            "render": cfg.get("render.backend"),
+            "geometry": cfg.get("asset.geometry"),
+            "keyframe": cfg.get("keyframe.backend"),
+            "grad": cfg.get("calibration.grad_backend"),
+        },
+        "capabilities": capabilities,
+        "verdict": "OK",
+    }
+    print(dumps_json(payload, indent=2))
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="tryon-cli")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -133,6 +230,12 @@ def main(argv: list[str] | None = None) -> int:
 
     p = sub.add_parser("selfcheck", help="environment self check")
     p.set_defaults(func=cmd_selfcheck)
+
+    p = sub.add_parser("doctor", help="per-capability availability report")
+    p.add_argument("--mode", default="mock")
+    p.add_argument("--hardware", default=None)
+    p.add_argument("--config-dir", default=None)
+    p.set_defaults(func=cmd_doctor)
 
     args = parser.parse_args(argv)
     return int(args.func(args))

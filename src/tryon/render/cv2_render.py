@@ -14,6 +14,7 @@ import numpy as np
 from ..config import Config
 from ..math import project
 from ..types import Frame, GarmentAsset, PhysicsState, RenderOutput
+from .texture import garment_face_colors
 
 _COLOR_CACHE: dict[str, tuple[int, int, int]] = {}
 
@@ -103,7 +104,8 @@ class OpenCVMeshRenderer:
         light = np.array([0.35, 0.80, 0.48], dtype=np.float64)
         light /= np.linalg.norm(light)
         shade = 0.55 + 0.45 * np.abs(normals @ light)
-        base = np.array(garment_mean_color(asset), dtype=np.float64)
+        # Per-face UV-sampled colour (mean colour only survives as a fallback).
+        face_colors = garment_face_colors(asset)
 
         order = np.argsort(-face_depth)
         visible = order[valid[order] & front_facing[order]]
@@ -135,7 +137,7 @@ class OpenCVMeshRenderer:
             )
 
         tri_uv = uv_i[F[visible]].astype(np.int32)
-        col = np.clip(base[None, :] * shade[visible][:, None], 0, 255).astype(np.int64)
+        col = np.clip(face_colors[visible] * shade[visible][:, None], 0, 255).astype(np.int64)
 
         out = np.array(original, copy=True) if scale >= 1.0 else None
         if scale < 1.0:

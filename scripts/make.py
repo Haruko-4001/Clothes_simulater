@@ -13,10 +13,14 @@ DEFAULT_GARMENT = "assets/samples/garment.png"
 
 TARGETS = (
     "install",
+    "install-engine",
+    "install-perception",
     "test",
     "mock-run",
     "bootstrap-asset",
     "eval-report",
+    "bench",
+    "serve",
     "smoke",
 )
 
@@ -32,6 +36,10 @@ def command_for(target: str, env: Mapping[str, str]) -> list[str]:
     py = sys.executable
     if target == "install":
         return [py, "-m", "pip", "install", "-e", ".[test]"]
+    if target == "install-engine":
+        return [py, "-m", "pip", "install", "-e", ".[test,engine]"]
+    if target == "install-perception":
+        return [py, "-m", "pip", "install", "-e", ".[perception]"]
     if target == "test":
         return [py, "-m", "pytest", "tests", "-q"]
     if target == "mock-run":
@@ -46,6 +54,11 @@ def command_for(target: str, env: Mapping[str, str]) -> list[str]:
             py, "-m", "app.cli", "eval-report",
             "--log", "var/logs/run.jsonl", "--out", "var/eval",
         ]
+    if target == "bench":
+        return [py, "scripts/bench_engines.py", "--out", "var/eval/bench.json"]
+    if target == "serve":
+        return [py, "-m", "app.serve", "--physics-solver", "warp",
+                "--render-backend", "opencv", "--geometry", "pattern"]
     if target == "smoke":
         return ["bash", "scripts/smoke.sh"]
     raise KeyError(target)

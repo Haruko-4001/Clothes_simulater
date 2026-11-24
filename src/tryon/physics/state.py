@@ -117,6 +117,24 @@ def build_constraints(
 
     sup = support_vertices(V)
     anchors = V[sup].copy()
+
+    # Sewing seams: panel boundaries joined by near-rigid distance constraints.
+    # This is how a pattern-based garment holds together (sleeves, collar) when
+    # panels are separate meshes rather than shared topology.
+    seams = getattr(mesh, "seams", None)
+    if seams is not None and len(seams):
+        si = seams[:, 0].astype(np.int64)
+        sj = seams[:, 1].astype(np.int64)
+        srest = np.maximum(np.linalg.norm(V[si] - V[sj], axis=1), 1.0e-6)
+        # Seams are stiffer than the fabric but not rigid: a 50x jump made the
+        # Jacobi solve inject energy (measured 32 J on a 1 kg tee). 5x holds the
+        # sleeve on without destabilising the iteration.
+        alpha_seam = np.full(len(si), 1.0 / max(k_edge * 5.0, 1.0e2), dtype=np.float64)
+        ei = np.concatenate([ei, si])
+        ej = np.concatenate([ej, sj])
+        rest = np.concatenate([rest, srest])
+        alpha_edge = np.concatenate([alpha_edge, alpha_seam])
+
     return MeshConstraints(
         masses=masses,
         inv_mass=inv_mass,

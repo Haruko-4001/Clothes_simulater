@@ -17,6 +17,21 @@ dependencies = [
 
 [project.optional-dependencies]
 test = ["pytest>=8.0"]
+# P0 engine backends. Both are local libraries with no model weights and no
+# network access; they are optional so the mock path still runs on a bare
+# numpy/Pillow install. `pip install -e ".[engine]"` or `make install-engine`.
+engine = [
+  "warp-lang>=1.19",
+  "opencv-python-headless>=4.9",
+]
+# P1 perception (real/hybrid modes only). The adapters use the legacy
+# Solutions API (mp.solutions.pose / mp.solutions.hands), which is only
+# guaranteed inside 0.10.x; mediapipe has no CPython 3.13 wheels, so the
+# marker keeps `.[perception]` installable and the adapter falls back to Stub
+# with E_ADAPTER_FALLBACK when it is missing.
+perception = [
+  'mediapipe>=0.10.9,<0.11; python_version < "3.13"',
+]
 
 [project.scripts]
 tryon-run = "app.main:main"

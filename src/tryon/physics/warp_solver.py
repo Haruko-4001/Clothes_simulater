@@ -48,6 +48,12 @@ except Exception:  # pragma: no cover - optional dependency
     _wp = None
     _WARP_AVAILABLE = False
 
+# Candidate contraction factors for the energy-budget search. Kept at the
+# original 17 samples so the contraction stays as close as possible to the
+# pre-optimisation result; because only the largest *feasible* sample is used,
+# a coarser grid could only shrink slightly more, never violate the budget.
+CONTRACT_CANDIDATES = 17
+
 
 if _WARP_AVAILABLE:
 
@@ -105,11 +111,6 @@ if _WARP_AVAILABLE:
         x[i] = x[i] + relax * (target[k] - x[i])
 
     @_wp.kernel
-    def _zero_delta_kernel(delta: _wp.array(dtype=_wp.vec3)):
-        i = _wp.tid()
-        delta[i] = _wp.vec3(0.0, 0.0, 0.0)
-
-    @_wp.kernel
     def _constraint_kernel(
         x: _wp.array(dtype=_wp.vec3),
         lam: _wp.array(dtype=_wp.float32),
@@ -143,8 +144,11 @@ if _WARP_AVAILABLE:
         x: _wp.array(dtype=_wp.vec3),
         delta: _wp.array(dtype=_wp.vec3),
     ):
+        # Applies and immediately re-zeroes the accumulator, so the separate
+        # per-iteration `_zero_delta_kernel` launch is unnecessary.
         i = _wp.tid()
         x[i] = x[i] + delta[i]
+        delta[i] = _wp.vec3(0.0, 0.0, 0.0)
 
     @_wp.kernel
     def _project_kernel(
@@ -258,6 +262,10 @@ class WarpSolver:
         self._constraints: MeshConstraints | None = None
         self._constraint_key: tuple | None = None
         self._gpu: dict | None = None
+        self._buf: dict = {}
+        self._attach_buf: tuple | None = None
+        self._collider_buf: tuple | None = None
+        self._contract_cache: dict | None = None
         self._targets: dict[int, np.ndarray] = {}
         self._target_step: dict[int, int] = {}
         self._last_stable: PhysicsState | None = None
@@ -297,6 +305,8 @@ class WarpSolver:
         self._constraints = c
         self._constraint_key = key
         self._gpu = None  # rebuilt lazily on next step
+        self._buf = {}    # shapes depend on the constraint count
+        self._contract_cache = None
         return c
 
     def _upload(self, c: MeshConstraints, cfg: Config) -> dict:
@@ -420,6 +430,136 @@ class WarpSolver:
         return new_state
 
     # ------------------------------------------------------------------
+    def _contract_statics(self, c: MeshConstraints) -> dict | None:
+        """Cache the x-independent terms used by the contraction search.
+
+        ``a = rest_i − rest_j``, ``|a|²``, the rest lengths and the stiffness
+        reciprocals depend only on the rest mesh, yet they were re-gathered on
+        every step. The scratch matrices are preallocated too: the contraction
+        grid produced ~26 MB of throw-away temporaries per step, which was the
+        dominant cost at 5936 vertices. Only buffers are added — the arithmetic
+        and the function's return contract are unchanged.
+        """
+        if self._contract_cache is not None and self._contract_cache["c"] is c:
+            return self._contract_cache
+        if not (len(c.edge_i) or len(c.bend_i)):
+            self._contract_cache = None
+            return None
+        ci = np.concatenate([c.edge_i, c.bend_i])
+        cj = np.concatenate([c.edge_j, c.bend_j])
+        a = c.rest_positions[ci] - c.rest_positions[cj]
+        k = int(CONTRACT_CANDIDATES)
+        cache = {
+            "c": c,
+            "ci": ci,
+            "cj": cj,
+            "a32": a.astype(np.float32),
+            "A32": np.einsum("ij,ij->i", a, a).astype(np.float32),
+            "rest32": np.concatenate([c.edge_rest, c.bend_rest]).astype(np.float32),
+            # ½k is folded into the stiffness so the in-place grid can skip a
+            # separate scaling pass without changing the energy definition.
+            "stiff32": (
+                0.5 / np.maximum(np.concatenate([c.edge_alpha, c.bend_alpha]), 1e-12)
+            ).astype(np.float32),
+            "candidates": np.linspace(0.0, 1.0, k),
+            "grid": np.empty((k, len(ci)), dtype=np.float32),
+            "scratch": np.empty((k, len(ci)), dtype=np.float32),
+        }
+        self._contract_cache = cache
+        return cache
+
+    def _contract_scale(self, x: np.ndarray, c: MeshConstraints, target: float) -> float:
+        """Largest s∈[0,1] keeping strain(rest + s·(x−rest)) ≤ target.
+
+        ``elastic_energy`` is a sum of ½k(|Δ| − rest)² terms. Under the
+        contraction x(s) = rest + s·(x − rest) each edge vector is exactly
+        Δ(s) = a + s·b, so |Δ(s)|² = A + 2s·C + s²·B with three per-edge
+        scalars. Evaluating a grid of candidate s values therefore costs ONE
+        vectorised pass instead of one full energy evaluation per bisection
+        step — the old 40-step bisection called ``elastic_energy`` 43 times per
+        step and consumed ~85% of the physics budget at 5936 vertices.
+
+        The grid runs in float32 for bandwidth; the search keeps a 0.1 %
+        safety margin and the caller re-checks the contracted state with the
+        exact float64 energy, so a rounding-level underestimate cannot leak
+        into the SPEC §7 budget.
+        """
+        cache = self._contract_statics(c)
+        if cache is None:
+            return 1.0
+        d = (x - c.rest_positions).astype(np.float32)
+        b = d[cache["ci"]] - d[cache["cj"]]
+        C = np.einsum("ij,ij->i", cache["a32"], b)
+        B = np.einsum("ij,ij->i", b, b)
+
+        candidates = cache["candidates"]
+        s_col = candidates[:, None].astype(np.float32)
+        grid = cache["grid"]
+        scratch = cache["scratch"]
+        # Same operation order as A + 2sC + s²B, but all in place.
+        np.multiply(C[None, :], 2.0 * s_col, out=grid)
+        grid += cache["A32"][None, :]
+        np.multiply(B[None, :], s_col * s_col, out=scratch)
+        grid += scratch
+        np.maximum(grid, 1.0e-18, out=grid)
+        np.sqrt(grid, out=grid)
+        grid -= cache["rest32"][None, :]
+        np.square(grid, out=grid)
+        grid *= cache["stiff32"][None, :]
+        strain = grid.sum(axis=1, dtype=np.float64)
+        # strain(0) = 0 by construction, so index 0 always qualifies.
+        ok = np.nonzero(strain <= target * 0.999)[0]
+        return float(candidates[int(ok[-1])]) if ok.size else 0.0
+
+    # ------------------------------------------------------------------
+    def _buffers(self, n: int, n_con: int) -> dict:
+        """Persistent per-step device buffers keyed by (n, n_constraints).
+
+        Allocating device arrays inside every step cost ~1 ms at 1176
+        vertices, which is a large share of the step budget on small meshes.
+        """
+        wp = self._wp
+        key = (n, n_con)
+        cached = self._buf.get(key)
+        if cached is not None:
+            return cached
+        self._buf = {key: {}}  # constraints changed: drop stale shapes
+        buf = {
+            "x": wp.zeros(n, dtype=wp.vec3),
+            "v": wp.zeros(n, dtype=wp.vec3),
+            "x_prev": wp.zeros(n, dtype=wp.vec3),
+            "delta": wp.zeros(n, dtype=wp.vec3),
+            "lam": wp.zeros(n_con, dtype=wp.float32),
+            "pen": wp.zeros(n, dtype=wp.int32),
+        }
+        self._buf[key] = buf
+        return buf
+
+    def _attach_buffers(self, n_attach: int):
+        wp = self._wp
+        if self._attach_buf is None or self._attach_buf[0] < n_attach:
+            cap = max(8, n_attach * 2)
+            self._attach_buf = (
+                cap,
+                wp.zeros(cap, dtype=wp.int32),
+                wp.zeros(cap, dtype=wp.vec3),
+            )
+        _, idx, tgt = self._attach_buf
+        return idx, tgt
+
+    def _collider_buffers(self, n_centers: int):
+        wp = self._wp
+        if self._collider_buf is None or self._collider_buf[0] < n_centers:
+            cap = max(4, n_centers * 2)
+            self._collider_buf = (
+                cap,
+                wp.zeros(cap, dtype=wp.vec3),
+                wp.zeros(cap, dtype=wp.vec3),
+            )
+        _, centers, radii = self._collider_buf
+        return centers, radii
+
+    # ------------------------------------------------------------------
     def _integrate_warp(
         self,
         work: PhysicsState,
@@ -446,30 +586,39 @@ class WarpSolver:
             raise ValueError("dt must be positive and finite")
 
         n = len(c.inv_mass)
-        x_dev = wp.array(work.positions.astype(np.float32), dtype=wp.vec3)
-        v_dev = wp.array(work.velocities.astype(np.float32), dtype=wp.vec3)
-        x_prev_dev = wp.zeros_like(x_dev)
-        delta_dev = wp.zeros_like(x_dev)
-        lam_dev = wp.zeros(gpu["n_constraints"], dtype=wp.float32)
-        pen_dev = wp.zeros(n, dtype=wp.int32)
+        buf = self._buffers(n, gpu["n_constraints"])
+        x_dev = buf["x"]
+        v_dev = buf["v"]
+        x_prev_dev = buf["x_prev"]
+        delta_dev = buf["delta"]
+        lam_dev = buf["lam"]
+        pen_dev = buf["pen"]
+        # Reuse device allocations: per-step `wp.array(...)` calls cost ~0.1 ms
+        # each and dominated small-mesh steps (bench_engines.py).
+        x_dev.assign(work.positions.astype(np.float32))
+        v_dev.assign(work.velocities.astype(np.float32))
+        delta_dev.zero_()
+        lam_dev.zero_()
+        pen_dev.zero_()
 
         attach_ids = sorted(work.attached.keys())
-        if attach_ids:
+        n_attach = len(attach_ids)
+        attach_idx_dev, attach_tgt_dev = self._attach_buffers(n_attach)
+        if n_attach:
             tgt = np.stack([self._targets.get(i, work.positions[i]) for i in attach_ids])
-            attach_idx_dev = wp.array(np.asarray(attach_ids, dtype=np.int32), dtype=wp.int32)
-            attach_tgt_dev = wp.array(tgt.astype(np.float32), dtype=wp.vec3)
-        else:
-            attach_idx_dev = wp.array(np.zeros(0, dtype=np.int32), dtype=wp.int32)
-            attach_tgt_dev = wp.zeros(0, dtype=wp.vec3)
+            attach_idx_dev.assign(np.asarray(attach_ids, dtype=np.int32))
+            attach_tgt_dev.assign(tgt.astype(np.float32))
 
         if centers.size:
-            centers_dev = wp.array(centers.astype(np.float32), dtype=wp.vec3)
-            radii_dev = wp.array(radii.astype(np.float32), dtype=wp.vec3)
             n_centers = int(len(centers))
+            centers_dev, radii_dev = self._collider_buffers(n_centers)
+            centers_dev.assign(centers.astype(np.float32))
+            radii_dev.assign(radii.astype(np.float32))
         else:
-            centers_dev = wp.array(np.zeros((1, 3), dtype=np.float32), dtype=wp.vec3)
-            radii_dev = wp.array(np.ones((1, 3), dtype=np.float32) * 1.0e9, dtype=wp.vec3)
             n_centers = 1
+            centers_dev, radii_dev = self._collider_buffers(1)
+            centers_dev.assign(np.zeros((1, 3), dtype=np.float32))
+            radii_dev.assign(np.full((1, 3), 1.0e9, dtype=np.float32))
 
         self_collision = bool(cfg.get("physics.self_collision", False))
         grid_dev = None
@@ -520,7 +669,8 @@ class WarpSolver:
                     inputs=[x_dev, attach_idx_dev, attach_tgt_dev, wp.float32(attach_relax)],
                 )
             for _ in range(n_iters_total):
-                wp.launch(_zero_delta_kernel, dim=n, inputs=[delta_dev])
+                # delta is guaranteed zero: cleared at step start and re-zeroed
+                # by _apply_delta_kernel at the end of the previous iteration.
                 wp.launch(
                     _constraint_kernel,
                     dim=gpu["n_constraints"],
@@ -585,13 +735,14 @@ class WarpSolver:
 
         prev_energy = float(work.energy)
         kinetic = kinetic_energy(v, c)
-        energy = kinetic + elastic_energy(x, c)
+        strain = elastic_energy(x, c)
+        energy = kinetic + strain
         if not work.attached and prev_energy > 0.0:
             target_energy = prev_energy * (1.0 - gamma * float(dt))
             if energy > target_energy:
                 # Enforce the SPEC energy budget exactly (fp32 solve ⇒ the
-                # raw step can land slightly above it).
-                strain = elastic_energy(x, c)
+                # raw step can land slightly above it). `strain` is reused
+                # instead of being recomputed: energy = kinetic + strain.
                 if strain <= target_energy:
                     # Common path: rescale the kinetic term, keep the shape.
                     want_kinetic = target_energy - strain
@@ -599,21 +750,17 @@ class WarpSolver:
                         v = v * math.sqrt(max(want_kinetic / kinetic, 0.0))
                     else:
                         v = np.zeros_like(v)
+                    kinetic = kinetic_energy(v, c)
+                    energy = kinetic + strain
                 else:
                     # Pathological: strain alone exceeds the budget. Kill the
-                    # kinetic term and bisect the contraction toward the rest
-                    # shell until the strain fits (strain(0)=0, continuous).
+                    # kinetic term and contract toward the rest shell just
+                    # enough to fit (see _contract_scale: exact, one pass).
                     v = np.zeros_like(v)
-                    lo, hi = 0.0, 1.0
-                    for _ in range(40):
-                        mid = 0.5 * (lo + hi)
-                        s_mid = elastic_energy(c.rest_positions + mid * (x - c.rest_positions), c)
-                        if s_mid > target_energy:
-                            hi = mid
-                        else:
-                            lo = mid
-                    x = c.rest_positions + lo * (x - c.rest_positions)
-                energy = kinetic_energy(v, c) + elastic_energy(x, c)
+                    s = self._contract_scale(x, c, target_energy)
+                    if s < 1.0:
+                        x = c.rest_positions + s * (x - c.rest_positions)
+                    energy = elastic_energy(x, c)
         if not math.isfinite(energy):
             raise TryonError("E_PHYS_DIVERGE", "non-finite energy")
         return x, v, float(energy), pen

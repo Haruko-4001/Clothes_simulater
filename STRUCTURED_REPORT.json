@@ -1,7 +1,7 @@
 {
   "spec_version": "v2.0",
   "mode": "mock",
-  "generated_at": "2026-11-09T10:03:40.533497+00:00",
+  "generated_at": "2026-11-24T15:47:00.958512+00:00",
   "authority": "SPEC.md §0 AGENT_INSTRUCTIONS / Appendix F; CLAUDE.md points here",
   "files": [
     {
@@ -170,6 +170,71 @@
       "status": "REAL",
       "category": "build",
       "symbols": []
+    },
+    {
+      "path": "scripts/bench_engines.py",
+      "status": "REAL",
+      "category": "build",
+      "symbols": [
+        "_time_steps",
+        "_time_render",
+        "_build_asset",
+        "main"
+      ],
+      "notes": "Reproducible engine benchmark (numpy vs Warp XPBD, PIL vs OpenCV); median of repeats, writes var/eval/bench.json. Backs every number quoted in README local_benchmarks."
+    },
+    {
+      "path": "configs/local.example.yaml",
+      "status": "REAL",
+      "category": "config",
+      "symbols": [],
+      "notes": "Tracked template for the git-ignored configs/local.yaml overlay (credentials + machine-local engine pins); keeps API-key slots out of tracked configs."
+    },
+    {
+      "path": "PRODUCT.md",
+      "status": "REAL",
+      "category": "spec_or_doc",
+      "symbols": [],
+      "notes": "Product decision + PRD: web-first interactive fabric/pattern preview (not a consumer try-on app), target users, MVP scope, capability matrix, pricing and roadmap M0-M5."
+    },
+    {
+      "path": "app/serve.py",
+      "status": "REAL",
+      "category": "code",
+      "symbols": [
+        "LiveSession",
+        "create_app",
+        "_encode_jpeg",
+        "main"
+      ],
+      "notes": "Web product shell: MJPEG stream, JSON status, garment-swap upload, doctor endpoint. Runs the existing MockRunner loop in one producer thread."
+    },
+    {
+      "path": "src/tryon/asset/uv.py",
+      "status": "REAL",
+      "category": "code",
+      "symbols": ["cylindrical_uvs"],
+      "notes": "Cylindrical UV unwrap with the back half folded onto the front (single-view texture prior)."
+    },
+    {
+      "path": "src/tryon/asset/pattern.py",
+      "status": "REAL",
+      "category": "code",
+      "symbols": [
+        "TeeMeasurements",
+        "PanelSet",
+        "build_tee",
+        "measurements_from_segmentation",
+        "PatternGeometryEstimator"
+      ],
+      "notes": "Pattern cold start: measurements -> panels (torso + 2 sleeves) -> seams. Sleeve length is read from the shoulder-row vs hem-row width difference, so a sleeveless input yields a sleeveless mesh. Seams travel as SimReadyMesh.seams and become near-rigid XPBD distance constraints. Upstream GarmentCode library is NOT vendored (not on PyPI; unaudited third-party tree declined) — this module implements the panel/stitch data model so a design loader can be swapped in."
+    },
+    {
+      "path": "src/tryon/render/texture.py",
+      "status": "REAL",
+      "category": "code",
+      "symbols": ["garment_face_colors", "clear_cache"],
+      "notes": "Per-face UV sampling (4 taps) replacing the single mean colour, so stripes/prints survive rendering; background taps fall back to the foreground mean."
     },
     {
       "path": "src/tryon/__init__.py",
@@ -1100,11 +1165,12 @@
       "accept_cmd": "make test && make eval-report",
       "equivalent_cmd": "No GNU make on this host: `make X` executed as `python scripts/make.py X`; mock-run forwards --log to a path outside the repo to protect the tracked sample log",
       "result": "PASS",
-      "tests_passed": 67
+      "tests_passed": 98
     }
   ],
   "not_implemented": [
-    "Real GeometryEstimator (SewFormer / GarmentRec / InstantMesh) — SilhouetteGeometryEstimator (image-driven lofting) IS delivered as the mock-usable P3 step",
+    "Real GeometryEstimator (SewFormer / GarmentRec / InstantMesh) — SilhouetteGeometryEstimator (image-driven lofting) and PatternGeometryEstimator (panels + seams, sleeves) ARE delivered as the mock-usable P3/M2 steps",
+    "Upstream GarmentCode library and its design-file loader (not on PyPI; unaudited third-party tree not vendored). The panel/stitch data model and assembler it implies are implemented in asset/pattern.py",
     "SMPL-X body fitting (MediaPipeBodyTracker delivered for P1; SMPL-X mesh/β,θ fitting remains open)",
     "WiLoR / HaMeR hand models (MediaPipeHandTracker delivered for P1)",
     "DiffClothSolver (guarded integration point; warp_grad.py now provides reverse-mode cloth gradients for pipeline C)",
@@ -1118,23 +1184,26 @@
     {
       "id": "A1",
       "spec_ref": "§2.1 / §1.3",
-      "observation": "§2.1 constrains display_fps>=30 and physics_hz=60; the mock reference loop is a pure-Python stub and its framework counters are lower. p95 latency is within the <=100ms Phase-4 bound.",
+      "observation": "§2.1 constrains display_fps>=30 and physics_hz=60. The default mock configuration (numpy XPBD + PIL rasteriser + 1080p synthetic camera) reports lower framework counters; with the optional engine backends the same 300-frame loop reaches 25.5 fps / p95 44.5 ms. Both sets are local-host numbers, archived under local_benchmarks and reproduced by scripts/bench_engines.py; the §17.10 target-hardware table remains entirely TODO.",
       "question": "Does §2.1's fps constraint apply to mock framework counters, or only to target-hardware measurements?",
-      "requested_action": "Ruling required. Per Appendix F the implementation must not silently pick a middle value or adjust targets on its own; no numbers are claimed in the README measured table."
+      "ruling": "§2.1 constrains the shipped product on target hardware. Mock framework counters and local-host benchmarks are engineering evidence only: they are never written into the §17.10 table, never reported as a product guarantee, and §1.3's five fps meters stay independent. Consequence: (a) no mock-derived number may be presented as meeting or missing §2.1; (b) the ≤100 ms p95 bound is still checked against the mock loop because it is a latency budget that the loop can genuinely violate, and it now passes with 55% headroom.",
+      "decided_by": "project owner delegation (2026-11-24)"
     },
     {
       "id": "A2",
       "spec_ref": "§15 Phase 3 / §6.1",
       "observation": "A 300-frame mock run reports commits=0 and material_histogram all AI_PRIOR; COMMIT / DEGRADE are covered by unit + integration tests, and a 60-frame known-Θ* synthetic trajectory verifies ε_Θ decreases.",
       "question": "Must the 300-frame mock main loop itself reach a COMMIT, or is gate-level plus synthetic-trajectory coverage sufficient for Phase 3?",
-      "requested_action": "Ruling required before changing mock excitation generation."
+      "ruling": "Gate-level plus synthetic-trajectory coverage is sufficient. COMMIT depends on human excitation (pull / release energy decay) that a scripted scene cannot honestly reproduce; forcing a commit would require fabricating observations. Phase 3 acceptance therefore stands on: three-gate unit tests, a known-Θ* trajectory whose ε_Θ decreases, and the end-to-end wiring test that a BATCH reaching the gates does version the asset.",
+      "decided_by": "project owner delegation (2026-11-24)"
     },
     {
       "id": "A3",
       "spec_ref": "§5 / §17.8",
-      "observation": "Pipeline C uses a multiprocessing worker; calibration_results varies between identical 300-frame runs (1 vs 2) because submission timing is wall-clock dependent. Physics/framing are deterministic when calibration is disabled (regression test).",
+      "observation": "Pipeline C uses a multiprocessing worker; calibration_results varies between identical 300-frame runs because submission timing is wall-clock dependent. Physics/framing are deterministic when calibration is disabled (regression test).",
       "question": "Is wall-clock-dependent submission count acceptable, or must the mock worker be synchronised for reproducible acceptance runs?",
-      "requested_action": "Ruling required; pipeline C must not block pipeline B either way."
+      "ruling": "Wall-clock-dependent submission is accepted, because the binding requirement is that pipeline C never blocks pipeline B (met: separate process, bounded queue, terminate-on-exit). Determinism is guaranteed only with pipeline C disabled, and that mode is now the documented contract for benchmarks and acceptance runs (`--no-calibration`, used by scripts/bench_engines.py and the README A/B command).",
+      "decided_by": "project owner delegation (2026-11-24)"
     }
   ],
   "deviations": [
@@ -1147,18 +1216,34 @@
       "description": "configs/default.yaml adds engine-backend keys introduced by the P0-P4 adapters: physics.self_collision[_radius_m], perception.{body_backend,hand_backend,body_depth_m,hand_depth_m}, render.backend opencv value, keyframe.fashn_* client keys, calibration.grad_backend (fd|warp), asset.geometry silhouette value. All are consumed by the adapters that read them; no second threshold copy exists (§0.2)."
     },
     {
+      "spec_ref": "§9.4 mesh contract",
+      "description": "SimReadyMesh gained an optional `seams` array (vertex pairs joined by near-rigid distance constraints). Physics still receives one mesh built by the unchanged builders; seams are pattern data, not topology, so D13 asset separation and the repair gates are unaffected. MeshRepairer now copies `seams` through (it previously rebuilt the mesh and silently dropped them)."
+    },
+    {
       "spec_ref": "§4 directory structure",
-      "description": "Extra files not listed in §4: .gitignore, .gitattributes, STRUCTURED_REPORT.json, scripts/make.py, make.cmd, the extra regression tests, var/logs/run.jsonl, assets/samples/garment.png, and the P0-P4 engine modules physics/warp_solver.py, render/cv2_render.py, calibration/warp_grad.py. All are documentation/build/data/engine artefacts required for a working delivery; no §4 file is missing."
+      "description": "Extra files not listed in §4: .gitignore, .gitattributes, STRUCTURED_REPORT.json, PRODUCT.md, scripts/make.py, scripts/bench_engines.py, make.cmd, the extra regression tests, configs/local.example.yaml, var/logs/run.jsonl, assets/samples/garment.png, the P0-P4 engine modules physics/warp_solver.py, render/cv2_render.py, calibration/warp_grad.py, the texturing modules asset/uv.py and render/texture.py, and the web shell app/serve.py. All are documentation/build/data/engine/product artefacts required for a working delivery; no §4 file is missing."
     },
     {
       "spec_ref": "§12 config template",
       "description": "configs/default.yaml carries extra keys (g1_iou_threshold, g2, confidence_weights, mesh_resolution, etc.) defined by §7/§10. The unused N/m keys support_stiffness / attach_stiffness were replaced by the actually consumed dimensionless support_relax / attach_relax (§0.2)."
+    },
+    {
+      "spec_ref": "§17.10 / §7",
+      "description": "Two number tables now coexist and MUST NOT be conflated. (1) The §17.10 target-hardware measured table in README stays entirely TODO. (2) A separate '本机实测基准' section reports local-host engine numbers (RTX 5060 Laptop 8 GB, warp-lang 1.19, CUDA 13.4) produced by scripts/bench_engines.py and archived under var/eval/bench.json; those are engineering evidence about the optional backends, not a claim about the target hardware. measured_numbers stays empty because it is reserved for the §17.10 table."
+    },
+    {
+      "spec_ref": "§0.1.3 mock guarantee",
+      "description": "The 'no GPU / no weights / no network' guarantee holds for the DEFAULT mock configuration. factory.build honours explicit engine selection in every mode, so `--physics-solver warp` or `render.backend: opencv` will initialise CUDA (or CPU kernels) and read local packages in mock mode too. README states this boundary explicitly; no weights or network access is ever added by the engine backends."
     }
   ],
   "risks": [
-    "Real adapters all fall back to Stub with E_ADAPTER_FALLBACK; no GPU/weights/network path is exercised by this delivery.",
-    "Pipeline C submission count is wall-clock dependent (see ambiguities A3).",
-    "Target-hardware table stays empty; no performance or accuracy number is claimed."
+    "Every real adapter still falls back to Stub with E_ADAPTER_FALLBACK when its optional dependency or credential is missing; the P0 engine backends (warp, opencv) are the only new paths exercised locally, and the P1 MediaPipe path had no mediapipe install on the build host (fallback-only coverage there).",
+    "Pipeline C submission count is wall-clock dependent (ruling A3: accepted; determinism is provided by --no-calibration).",
+    "The §17.10 target-hardware table stays empty; local-host engine benchmarks exist and are labelled as such (deviations), never as target-hardware results.",
+    "FASHN keyframe generation sends the user's camera frame and garment image to a third-party HTTP service; it is opt-in (mode real/hybrid + keyframe.backend + FASHN_API_KEY) and no privacy guarantee is implied.",
+    "Self-collision is vertex-level hash-grid repulsion behind physics.self_collision (default false); point-triangle collision and cloth self-contact resolution remain unimplemented.",
+    "Warp physics measures 5.27 ms/step at the 5936-vertex budget point: 3.2x inside the 60 Hz requirement but ~5% above the SPEC §8 '<=5 ms @ N=6000' figure. numpy is 66 ms/step at the same size.",
+    "MediaPipe trackers use the legacy Solutions API (mp.solutions.*) whose lifetime is not guaranteed across major versions; a future removal surfaces as E_ADAPTER_FALLBACK rather than a crash, but the real path would degrade to Stub."
   ],
   "dod": [
     {
@@ -1168,7 +1253,7 @@
     {
       "item": "make test all green (12 SPEC files)",
       "status": "PASS",
-      "note": "12 SPEC files + 2 regression files; 67 tests"
+      "note": "12 SPEC files + 3 regression files; 98 tests, 0 skip on the build host (warp/cv2 installed, mediapipe absent)"
     },
     {
       "item": "README has three commands, non-promises, empty measured table",
@@ -1196,7 +1281,8 @@
     },
     {
       "item": "No fabricated measured numbers",
-      "status": "PASS"
+      "status": "PASS",
+      "note": "measured_numbers (the §17.10 target-hardware table) is empty; local-host engine numbers live in local_benchmarks with host, script and artifact provenance"
     },
     {
       "item": "STRUCTURED_REPORT output",
@@ -1205,6 +1291,38 @@
     }
   ],
   "measured_numbers": [],
+  "local_benchmarks": {
+    "note": "Local-host engineering evidence for the optional engine backends. NOT the §17.10 target-hardware table; measured_numbers stays empty on purpose.",
+    "host": {
+      "gpu": "NVIDIA GeForce RTX 5060 Laptop GPU (8 GiB, sm_120)",
+      "cuda_toolkit": "13.4",
+      "warp_lang": "1.19.0",
+      "python": "3.13.12"
+    },
+    "reproduce": "python scripts/bench_engines.py --out var/eval/bench.json (make bench); end-to-end command documented in README",
+    "artifact": "var/eval/bench.json (git-ignored runtime output; the values below are the run archived there, regenerate to re-verify)",
+    "protocol": "fixed dt=1/60 s, 20 warmup steps, median of 3 repeats (min/max kept); host load causes +-30% run-to-run spread",
+    "physics_steps_per_s_median": {
+      "240_vertices": {"numpy": 369.2, "warp": 661.1, "speedup": 1.79, "warp_ms_per_step": 1.51},
+      "416_vertices": {"numpy": 221.0, "warp": 470.0, "speedup": 2.13, "warp_ms_per_step": 2.13},
+      "1176_vertices": {"numpy": 83.6, "warp": 324.0, "speedup": 3.88, "warp_ms_per_step": 3.09},
+      "2880_vertices": {"numpy": 31.6, "warp": 257.0, "speedup": 8.13, "warp_ms_per_step": 3.89},
+      "5936_vertices": {"numpy": 15.1, "warp": 189.8, "speedup": 12.57, "warp_ms_per_step": 5.27}
+    },
+    "physics_crossover_vertices": "none observed: the Warp backend is faster at every measured size once per-step allocation and the energy-clamp rewrite landed (it was slower below ~300 vertices before)",
+    "spec_8_step_budget": "Warp measures 5.27 ms/step at the 5936-vertex budget point, about 5% above the SPEC §8 '<=5 ms @ N=6000' figure, and 3.2x inside the 16.7 ms 60 Hz requirement. numpy measures 66 ms/step. The residual 5% is recorded, not tuned away.",
+    "end_to_end_300_frames_1176_vertices_1080p": {
+      "baseline_numpy_pil_stub": {"display_fps": 13.7, "p50_ms": 64.7, "p95_ms": 77.5},
+      "engine_warp_cv2_silhouette": {"display_fps": 25.5, "p50_ms": 30.4, "p95_ms": 44.5},
+      "note": "median of 3 pairs, calibration disabled; p95 has 55% headroom inside the SPEC <=100 ms bound, display_fps remains 15% below the 30 fps target because the 1080p synthetic camera and HUD dominate"
+    },
+    "render_ms_1080p_2352_faces": {"pil": 24.04, "opencv": 10.31, "speedup": 2.33},
+    "fixed_defects": [
+      "Energy-budget contraction used a 40-step bisection that called elastic_energy 43 times per step (~85% of the step at 5936 vertices); replaced with a cached, preallocated quadratic-form search while keeping the float64 exact re-check and the §7 invariant.",
+      "The Warp step allocated ~10 device arrays per step and launched a redundant zero-delta kernel per iteration; replaced with persistent buffers and an apply-and-zero kernel.",
+      "Per-step validation lives in tests/test_engine_adapters.py (contract_scale budget + monotonicity, step-time guard)."
+    ]
+  },
   "license_flags": [
     "CatVTON / IDM-VTON / OOTDiffusion / StableVITON / CausVid: CC BY-NC-SA 4.0",
     "WiLoR: CC-BY-NC-ND; MANO restricted",
@@ -1213,6 +1331,8 @@
     "SDXL-Turbo: non-commercial",
     "VTON360 checkpoint: Open RAIL-M derivative",
     "Repository MIT/Apache does NOT imply weights are commercially usable",
-    "policy.allow_nc_weights must remain false in production"
+    "policy.allow_nc_weights must remain false in production",
+    "warp-lang (NVIDIA Warp): Apache-2.0; opencv-python-headless: Apache-2.0; mediapipe: Apache-2.0 — code licences only, no model weights are bundled",
+    "FASHN VTON v1.5 backend is consumed as a paid third-party REST service; its terms of service and data-handling policy govern usage and are not represented by this repository's MIT licence"
   ]
 }

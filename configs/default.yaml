@@ -40,6 +40,7 @@ perception:                      # P1 real adapters (real/hybrid mode)
   hand_backend: mediapipe        # mediapipe|legacy
   body_depth_m: 1.9               # monocular depth prior (documented limitation)
   hand_depth_m: 1.7
+  smplx_model_path: ""            # SMPL-X .npz (registration required); empty = unavailable
 render: {backend: stub, scale: 1.0}   # stub|opencv; scale<1 renders at reduced resolution
 keyframe:
   max_queue: 2
@@ -52,12 +53,14 @@ keyframe:
   alpha0: 0.55
   tau_fuse_ms: 260
   backend: stub                  # stub|fashn_vton_1_5|catvton|leffa|omnitry
-  fashn_api_key: ""              # or env FASHN_API_KEY
+  # fashn_api_key is deliberately NOT stored here: this file is tracked.
+  # Put it in configs/local.yaml (git-ignored, see configs/local.example.yaml)
+  # or in the FASHN_API_KEY environment variable.
   fashn_timeout_s: 120.0
   fashn_poll_s: 2.0
   fashn_category: tops
 asset:
-  geometry: stub                 # stub|silhouette|sewformer|instantmesh|garmentrec
+  geometry: stub                 # stub|silhouette|pattern|sewformer|instantmesh|garmentrec
   material_prior: dictionary
   offline_timeout_s: 300
   back_confidence_threshold: 0.65   # τ_back

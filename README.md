@@ -2,6 +2,20 @@
 
 > 严格实现 `SPEC.md`（v2.0，学术增强版）。默认 `mode: mock`：**无 GPU / 无权重 / 无网络 / 无 GUI**，端到端主循环可连续跑 300 帧。
 > 权威规格是 `SPEC.md`；本 README 只说明如何运行与边界，不覆盖规格。
+> 产品定位、形态选择与商业化路线见 **[`PRODUCT.md`](PRODUCT.md)**。
+
+## 产品形态（已落地）
+
+这是一个**浏览器优先的「面料/版型可交互预览」服务**，不是试衣 App。启动：
+
+```bash
+make serve          # 或 python -m app.serve --physics-solver warp --render-backend opencv
+# 打开 http://127.0.0.1:8000
+```
+
+- 实时 MJPEG 流（`/stream`）+ 状态面板（`/api/status`）
+- 拖入衣服图片即换装（`/api/garment`，管线 A 同步重建资产）
+- 能力自检（`/api/doctor` 与 `python -m app.cli doctor`）会逐项告诉你哪些后端在本机真的可用、哪些会回退 Stub
 
 ## 三条命令
 
@@ -20,11 +34,23 @@ make test
 
 ```bash
 make eval-report     # 读取 var/logs/run.jsonl 生成 var/eval/report.{json,md}
+make bench           # 引擎基准，产物 var/eval/bench.json
 python -m app.cli selfcheck
 
-# P0-P4 引擎栈（可选本地依赖 warp-lang / opencv；缺失自动回退 stub）
+# 可选引擎依赖（warp-lang + opencv-python-headless），缺失时自动回退 stub
+python -m pip install -e ".[engine]"     # 或 make install-engine
+# 可选感知依赖（MediaPipe；无 CPython 3.13 轮子，需 3.10–3.12）
+python -m pip install -e ".[perception]"
+
+# P0 引擎栈
 python -m app.main --frames 300 --physics-solver warp --render-backend opencv --geometry silhouette
 ```
+
+### 保证边界（必须读）
+
+`无 GPU / 无权重 / 无网络` 是**默认 mock 配置**的保证。显式选择 `--physics-solver warp` 或 `render.backend: opencv` 会加载本地库并初始化 CUDA（若可用），这在 mock 模式下同样生效；但**新后端从不引入权重下载或网络访问**。FASHN 关键帧是唯一的联网路径，见下文。
+
+**FASHN 前置条件**：`mode: real|hybrid` + `keyframe.backend: fashn` + API key（`configs/local.yaml`，已 git-ignore；或环境变量 `FASHN_API_KEY`）。启用后 `person_image` 与 `garment_image` 会被上传至 `api.fashn.ai`，本仓库不提供任何隐私或数据处理保证。
 
 ### Windows
 
@@ -131,7 +157,7 @@ python scripts\make.py test
 
 ## 已实现 / 未实现（诚实声明）
 
-**已实现（mock 路径）**：数学层、封闭双面壳几何与 G1/G2、XPBD 物理、接触/释放/回弹、四态取景门禁、异步关键帧与 6 帧融合、HUD、三状态机、有限差分雅可比、LM/EKF、三闸门、许可门禁、注册表版本/TTL、12 个测试文件、300 帧主循环。
+**已实现（mock 路径）**：数学层、封闭双面壳几何与 G1/G2、**柱面 UV 贴图（花纹保真）**、XPBD 物理、接触/释放/回弹、四态取景门禁、异步关键帧与 6 帧融合、HUD、三状态机、有限差分雅可比、LM/EKF、三闸门、许可门禁、注册表版本/TTL、**Web 产品壳（实时流/状态/换衣）**、12 个规格测试文件 + 3 个回归文件、300 帧主循环。
 
 **P0–P4 引擎升级（2026-11，本机已验证）**：
 
@@ -141,35 +167,62 @@ python scripts\make.py test
 | 渲染 | **OpenCV 光栅化**（`render/cv2_render.py`，逐面 `fillConvexPoly` + AA，规避 fillPoly 的 even-odd 重叠空洞） | `render.backend: opencv` 或 `--render-backend opencv` | 已实现 + 测试 |
 | 感知 | **MediaPipe Body/Hand**（33→17 关节映射、D12 时序平滑、单目深度先验为已声明局限） | `mode: real/hybrid`（mediapipe 缺失自动回退 Stub） | 已实现 |
 | 关键帧 | **FASHN v1 REST 客户端**（提交+轮询+下载+差异掩膜；缺 API key 自动回退 Stub） | `keyframe.backend: fashn` + `FASHN_API_KEY` | 已实现 + mock-HTTP 测试 |
-| 几何 | **轮廓驱动放样**（`asset/geometry.py::SilhouetteGeometryEstimator`，掩膜逐行宽度驱动壳体轮廓，不同衣图→不同网格） | `asset.geometry: silhouette` 或 `--geometry silhouette` | 已实现 + G1 IoU 测试 |
+| 几何 | **轮廓驱动放样**（`asset/geometry.py::SilhouetteGeometryEstimator`，掩膜逐行宽度驱动壳体轮廓） | `asset.geometry: silhouette` | 已实现 + G1 IoU 测试 |
+| 几何 | **版型冷启动**（`asset/pattern.py`：measurements → panels → seams；躯干+双袖，缝合线以 5× 刚度的 XPBD 距离约束实现） | `asset.geometry: pattern` 或 `--geometry pattern` | 已实现 + 3 项测试（袖长随肩宽行、缝合线存活、稳定性） |
+| 贴图 | **柱面 UV + 逐面采样**（`asset/uv.py` + `render/texture.py`），花纹/条纹不再被平均成单色 | 自动生效 | 已实现 + 条纹保真测试 |
 | 辨识 | **Warp 反传梯度**（`calibration/warp_grad.py`，1 次前向+反向替代 LM 内环 8 次前向差分） | `calibration.grad_backend: warp` | 已实现 + 方向一致性测试 |
 
-全部新后端遵循既有 Protocol/工厂模式：依赖缺失时 `ImportError → E_ADAPTER_FALLBACK → Stub`，mock 主循环的"无 GPU/权重/网络"保证不受影响（warp/cv2 为可选本地依赖）。
+全部新后端遵循既有 Protocol/工厂模式：依赖缺失或**初始化期运行时失败**时 `异常 → E_ADAPTER_FALLBACK → Stub`，主循环不会因某个后端不可用而崩溃。warp/cv2 为可选本地依赖，不含权重、不访问网络。
 
-**本机实测基准**（RTX 5060 Laptop 8GB / warp-lang 1.19 / CUDA 13.4；物理=每秒 60Hz 物理步数，预热排除；口径≠§2.1 目标硬件表，该表仍保持 TODO）：
+**本机实测基准**（RTX 5060 Laptop 8GB / warp-lang 1.19 / CUDA 13.4）。复现命令：
 
-| 网格 (nu×nv) | 顶点 | numpy XPBD | Warp XPBD |
-|---|---|---|---|
-| 12×9 | 240 | 366 步/s | 532 步/s |
-| 28×20 | 1176 | 67 步/s | **241 步/s** |
-| 40×35 | 2880 | 36 步/s | **210 步/s** |
+```bash
+python scripts/bench_engines.py --out var/eval/bench.json     # 或 make bench
+```
 
-**端到端 300 帧 A/B**（`[28,20]` 1176 顶点、1080p、`--no-calibration`，仅引擎差异）：
+口径：固定 dt=1/60 s 连续步进，预热 20 步，**重复 3 次取中位数**（同时记录 min/max 以暴露主机波动）。这是**本机工程证据**，不是 §17.10 目标硬件实测表——那张表仍全为 TODO，`measured_numbers` 保持为空。
+
+| 网格 (nu×nv) | 顶点 | numpy XPBD | Warp XPBD | 加速比 | Warp ms/步 |
+|---|---|---|---|---|---|
+| 12×9 | 240 | 369 步/s | **661 步/s** | 1.8× | 1.51 |
+| 16×12 | 416 | 221 步/s | **470 步/s** | 2.1× | 2.13 |
+| 28×20 | 1176 | 84 步/s | **324 步/s** | 3.9× | 3.09 |
+| 40×35 | 2880 | 32 步/s | **257 步/s** | 8.1× | 3.89 |
+| 56×52 | 5936 | 15 步/s | **190 步/s** | **12.6×** | **5.27** |
+
+渲染（1080p、2352 面）：PIL 24.0 ms/帧 → OpenCV **10.3 ms/帧（2.3×）**。
+
+**端到端 300 帧 A/B**（`[28,20]` 1176 顶点、1080p、`--no-calibration`，重复 3 次取中位数）：
 
 | | 基线 numpy+PIL+stub | P0 栈 warp+cv2+silhouette | 变化 |
 |---|---|---|---|
-| display_fps | 7.5 | **11.0** | +47% |
-| physics_hz（墙钟口径） | 14.9 | **22.0** | +48% |
-| p50 / p95 延迟 | 117.4 / 143.9 ms | **80.0 / 105.3 ms** | -32% / -27% |
+| display_fps | 13.7 | **25.5** | **1.86×** |
+| p50 / p95 延迟 | 64.7 / 77.5 ms | **30.4 / 44.5 ms** | **−53% / −43%** |
 
-结论：`max_vertices: 6000` 预算下 60Hz 物理仅 Warp 后端可达（numpy 在 2880 顶点已跌破 60Hz）；网格越大，端到端差距越大（numpy 物理 O(N) 崩塌 + cv2 渲染 ~2.8×@1176 面）。主循环剩余瓶颈为 1080p 合成相机与 HUD（各 ~7-12ms），属 P0 之外的后续优化项。
+复现：
+
+```bash
+python -m app.main --frames 300 --headless --log var/logs/ab.jsonl --no-calibration \
+  --width 1920 --height 1080 --mesh-resolution 28 20
+# 追加 --physics-solver warp --render-backend opencv --geometry silhouette 即 P0 栈
+```
+
+结论与边界：
+- Warp 全规模领先（此前小网格更慢的问题已随每步固定开销的消除而消失）。在 `max_vertices: 6000` 预算点（5936 顶点）为 **12.6×，5.27 ms/步**——`190 步/s` 是 60 Hz 需求的 3.2 倍；相对 SPEC §8 的「≤5 ms @ N=6000」仍高约 5%，这一差额如实保留、未用调参抹平。
+- 端到端 p95 从 77.5 ms 降到 44.5 ms，**在 ≤100 ms 界内且有 55% 余量**；display_fps 25.5 仍略低于 30 目标，剩余瓶颈是 1080p 合成相机与 HUD（各约 7–12 ms），已不属于物理/渲染引擎层。
+- 数字随主机负载波动（同配置重复运行可见 ±30%），因此以中位数 + min/max 呈现，并附脚本与产物 `var/eval/bench.json`。
+- 本轮修掉并防回归的两个真实性能缺陷（均有测试锁定）：
+  1. 能量钳位曾用 40 步二分，每步调用 `elastic_energy` 43 次、占约 85% 物理时间 → 改为闭式二次型 + 预分配缓冲的单次向量化搜索（`_contract_scale`），最终能量仍由 float64 精确复核，§7 能量不变式不变。
+  2. 每步重复分配 10 个设备数组、每轮迭代额外一次清零内核 → 改为持久缓冲 + `_apply_delta_kernel` 内联清零。
 
 **未实现（Real 适配器，均回退 Stub 并记 `E_ADAPTER_FALLBACK`）**：SewFormer / GarmentRec / InstantMesh 真实几何、SMPL-X β/θ 网格拟合、WiLoR / HaMeR 手部、DiffCloth 求解器（管线 C 已由 warp_grad 提供反传梯度）、3DGS 真实渲染、本地 CatVTON / IDM-VTON / OmniTry / Leffa（NC 许可，未捆绑）、VTON 360 / TryOnCrafter（代码未公开/仅设计参考）、点-三角自碰撞（现为顶点级 hash-grid 近似，`physics.self_collision` 门控）。逐文件状态、各 Phase 验收结果、歧义裁决请求与许可证标记见 **[`STRUCTURED_REPORT.json`](STRUCTURED_REPORT.json)**（SPEC 附录 G 要求的交付物）。
 
 **真实接入**：
 
 ```bash
-bash scripts/install_real.sh --only=fashn_vton   # 可选，需要网络
+bash scripts/install_real.sh --only=engine        # 本地引擎依赖（warp-lang + opencv）
+bash scripts/install_real.sh --only=perception    # MediaPipe（需 Python < 3.13）
+bash scripts/install_real.sh --only=fashn_vton    # 可选，需要网络
 # 权重获取见 scripts/fetch_weights.sh；不得把任何权重路径设为必需
 ```
 

@@ -1,7 +1,11 @@
 """Config loading / merging. All thresholds come from ``configs/*.yaml``.
 
 IMPL: src/tryon/config.py
-Precedence: default.yaml < hardware/<hw>.yaml < <mode>.yaml < explicit overrides.
+Precedence: default.yaml < hardware/<hw>.yaml < <mode>.yaml < local.yaml < overrides.
+
+``local.yaml`` is git-ignored on purpose: it is the supported place for
+machine-local values and credentials (e.g. ``keyframe.fashn_api_key``), so
+secrets never enter a tracked file.
 """
 from __future__ import annotations
 
@@ -126,10 +130,21 @@ def load_config(
     files = [root / "default.yaml"]
     if hardware:
         files.append(root / "hardware" / f"{hardware}.yaml")
-    if mode:
-        files.append(root / f"{mode}.yaml")
+    # Resolve the mode layer from default.yaml when the caller did not pin one,
+    # so ``load_config(None)`` still picks up configs/mock.yaml (needed for the
+    # hidden mock ground truth) while ``load_config("real")`` picks real.yaml.
+    resolved_mode = mode
+    if not resolved_mode:
+        resolved_mode = str(_read_yaml(root / "default.yaml").get("mode", "mock"))
+    files.append(root / f"{resolved_mode}.yaml")
+    local = root / "local.yaml"
+    if local.exists():
+        # Git-ignored machine-local overlay: credentials / hardware tweaks.
+        files.append(local)
     for path in files:
         _deep_merge(merged, _read_yaml(path))
+    if mode:
+        merged["mode"] = mode
     if overrides:
         _merge(merged, dict(overrides))
     cfg = Config(merged, source=str(root))

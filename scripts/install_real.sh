@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 # Optional real-adapter installer. Nothing here is required for mock mode.
-# Usage: scripts/install_real.sh --only=sewformer|fashn_vton|omnitry|catvton|wilor|diffcloth|physgaussian
+# Usage: scripts/install_real.sh --only=sewformer|fashn_vton|omnitry|catvton|wilor|diffcloth|physgaussian|engine
+#
+# `--only=engine` installs the P0 local engine backends (warp-lang + opencv)
+# from the declared extras; it needs no vendored checkout and no credentials.
+# `--only=perception` installs the P1 MediaPipe trackers.
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 VENDOR="$ROOT/adapters_vendor"
@@ -18,7 +22,7 @@ done
 
 if [[ -z "$ONLY" ]]; then
   echo "Refusing to install everything at once. Pass --only=<adapter>." >&2
-  echo "Adapters: sewformer fashn_vton omnitry catvton wilor diffcloth physgaussian" >&2
+  echo "Adapters: sewformer fashn_vton omnitry catvton wilor diffcloth physgaussian engine perception" >&2
   exit 2
 fi
 
@@ -60,6 +64,16 @@ case "$ONLY" in
   physgaussian)
     clone PhysGaussian https://github.com/XPandora/PhysGaussian
     echo "PhysGaussian: MPM + 3DGS; render layer only (TODO)."
+    ;;
+  engine)
+    echo "[pip] installing local engine backends (warp-lang + opencv)"
+    python -m pip install -e "$ROOT[engine]"
+    echo "Engine backends installed. Select with --physics-solver warp / --render-backend opencv."
+    ;;
+  perception)
+    echo "[pip] installing MediaPipe trackers"
+    python -m pip install -e "$ROOT[perception]"
+    echo "Perception installed. Requires mode: real|hybrid; falls back to Stub otherwise."
     ;;
   *)
     echo "unknown adapter: $ONLY" >&2; exit 2 ;;

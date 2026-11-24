@@ -32,6 +32,7 @@ from .material_prior import MaterialPrior, material_prior_level
 from .mesh_repair import MeshRepairer
 from .registry import AssetRegistry, asset_id_for
 from .segment import Segmenter
+from .uv import cylindrical_uvs
 
 
 @dataclass
@@ -192,7 +193,7 @@ class AssetBuilder:
         appearance = AppearanceMesh(
             vertices=mesh.vertices.copy(),
             faces=mesh.faces.copy(),
-            uvs=_planar_uvs(mesh),
+            uvs=cylindrical_uvs(mesh.vertices),
             source_image=img.copy(),
             shell_mapping=np.arange(mesh.n_vertices, dtype=np.int64),
         )
@@ -234,15 +235,6 @@ class AssetBuilder:
             self.registry.register(asset)
         self._check_timeout(t0, timeout_s, "finalise")
         return asset
-
-
-def _planar_uvs(mesh: SimReadyMesh) -> np.ndarray:
-    v = mesh.vertices
-    xmin, xmax = float(v[:, 0].min()), float(v[:, 0].max())
-    ymin, ymax = float(v[:, 1].min()), float(v[:, 1].max())
-    u = (v[:, 0] - xmin) / max(xmax - xmin, 1e-9)
-    w = (v[:, 1] - ymin) / max(ymax - ymin, 1e-9)
-    return np.stack([u, w], axis=1)
 
 
 __all__ = ["AssetBuilder", "AppearanceMesh", "CollisionBody"]

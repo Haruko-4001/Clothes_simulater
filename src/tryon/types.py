@@ -297,6 +297,11 @@ class SimReadyMesh:
     has_isolated_edge: bool
     self_intersection_count: int
     collision_ready: bool
+    # Sewing seams: extra vertex pairs joined by a near-zero-rest-length
+    # distance constraint. Panel-based garments (sleeves, collar) are held
+    # together by seams instead of shared topology, which is what a sewing
+    # pattern actually describes.
+    seams: np.ndarray | None = None
 
     def __post_init__(self) -> None:
         self.vertices = np.asarray(self.vertices, dtype=np.float64)
@@ -311,6 +316,14 @@ class SimReadyMesh:
         if not (self.thickness > 0.0):
             raise ValueError("SimReadyMesh.thickness must be > 0")
         self.self_intersection_count = int(self.self_intersection_count)
+        if self.seams is None:
+            self.seams = np.zeros((0, 2), dtype=np.int64)
+        else:
+            self.seams = np.asarray(self.seams, dtype=np.int64).reshape(-1, 2)
+            if self.seams.size and (
+                self.seams.min() < 0 or self.seams.max() >= len(self.vertices)
+            ):
+                raise ValueError("SimReadyMesh.seams contains out-of-range indices")
 
     @property
     def n_vertices(self) -> int:

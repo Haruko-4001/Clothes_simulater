@@ -28,6 +28,7 @@ if str(SRC) not in sys.path:
 from tryon.asset.material_prior import FABRIC_PRESETS  # noqa: E402
 from tryon.calibration.identifier import calibration_process_worker  # noqa: E402
 from tryon.config import Config, load_config  # noqa: E402
+from tryon.display import HeadlessDisplay, WindowDisplay  # noqa: E402
 from tryon.factory import build  # noqa: E402
 from tryon.interaction.state_machine import (  # noqa: E402
     AssetState,
@@ -178,8 +179,9 @@ class MockRunner:
         self.enable_keyframes = enable_keyframes
         self.enable_calibration = enable_calibration
         self.components = build(cfg)
-        if headless:
-            self.components["Display"].__class__ = self.components["Display"].__class__
+        if not headless and isinstance(self.components["Display"], HeadlessDisplay):
+            # --gui must actually change the sink, even in mock mode.
+            self.components["Display"] = WindowDisplay(cfg)
 
         self.segmenter = self.components["Segmenter"]
         self.geometry = self.components["GeometryEstimator"]
@@ -267,6 +269,85 @@ class MockRunner:
         self.start_wall = time.time()
         self.last_event_summary: list[dict[str, Any]] = []
         self.hud_texts: list[str] = []
+
+    # ------------------------------------------------------------------
+    def swap_garment(self, image: np.ndarray) -> dict[str, Any]:
+        """Rebuild the asset from a new garment image and reset the simulation.
+
+        This is the product's core user action ("try another garment"), so it
+        lives on the runner instead of being re-implemented by each front end.
+        Pipeline A runs synchronously here; callers that need to stay
+        responsive should invoke it off the render thread.
+        """
+        asset = self.asset_builder.build(
+            image, timeout_s=float(self.cfg.require("asset.offline_timeout_s"))
+        )
+        preset_name = self.cfg.get("mock.true_material_preset")
+        if preset_name and str(preset_name) in FABRIC_PRESETS:
+            world = dataclasses.replace(
+                asset,
+                material=MaterialParams(
+                    **dict(FABRIC_PRESETS[str(preset_name)]),
+                    state=MaterialState.AI_PRIOR,
+                ),
+            )
+        else:
+            world = asset
+        self.asset = asset
+        self.world_asset = world
+        self.phys = self.physics.initial_state(world)
+        self.body_history.clear()
+        self.last_event_summary = []
+        try:
+            from tryon.render.texture import clear_cache
+
+            clear_cache()
+        except Exception:
+            pass
+        return {
+            "asset_id": asset.asset_id,
+            "version": asset.version,
+            "garment_class": asset.garment_class.value,
+            "mesh": {
+                "n_vertices": asset.rest_mesh.n_vertices,
+                "n_faces": asset.rest_mesh.n_faces,
+            },
+            "g1_pass": bool(asset.sewing_pattern.get("g1", {}).get("pass", False)),
+            "confidence": asset.confidence.as_dict(),
+            "needs_human_review": asset.needs_human_review,
+        }
+
+    # ------------------------------------------------------------------
+    def status_payload(self) -> dict[str, Any]:
+        """JSON status for a UI: framing, material, physics, timing."""
+        status = self.last_status
+        if status is None:
+            return {"ready": False}
+        return {
+            "ready": True,
+            "frame_id": getattr(self, "frame_id", 0),
+            "asset": {
+                "id": self.asset.asset_id,
+                "version": self.asset.version,
+                "state": status.asset_state,
+                "needs_human_review": self.asset.needs_human_review,
+                "confidence": status.confidence.as_dict(),
+            },
+            "material_state": status.material_state.value,
+            "framing": {
+                "verdict": status.framing.verdict.value,
+                "visible_keypoint_ratio": status.framing.visible_keypoint_ratio,
+                "guide_text": status.framing.guide_text,
+            },
+            "physics": {
+                "attached": len(self.phys.attached),
+                "penetration": self.physics.last_penetration_count,
+                "energy": self.phys.energy,
+                "step": self.phys.step,
+            },
+            "timing": status.timing.as_dict(),
+            "notice": status.notice,
+        }
 
     # ------------------------------------------------------------------
     def _body_person_mask(self, body: BodyState, shape: tuple[int, int]) -> np.ndarray:
@@ -419,6 +500,10 @@ class MockRunner:
                 pass
             self._cleanup_calibration_process()
             self.kf_service.close()
+            try:
+                self.display.close()
+            except Exception:
+                pass
             self.logger.close()
         return self.summary()
 
@@ -658,11 +743,18 @@ class MockRunner:
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Any-garment realtime try-on (SPEC v2.0)")
-    parser.add_argument("--mode", default="mock", choices=["mock", "real", "hybrid"])
+    # None (not "mock") so an explicit --mode is distinguishable from "unset"
+    # and configs/real.yaml / configs/hybrid.yaml are not silently overridden.
+    parser.add_argument("--mode", default=None, choices=["mock", "real", "hybrid"])
     parser.add_argument("--hardware", default=None)
     parser.add_argument("--frames", type=int, default=300)
-    parser.add_argument("--headless", action="store_true", default=True)
-    parser.add_argument("--gui", action="store_true")
+    # Headless is the default (SPEC §15 ACCEPT_CMD passes --headless). The old
+    # bug was that ``store_true, default=True`` made the flag impossible to turn
+    # OFF; --gui is now the explicit, mutually exclusive opt-out.
+    view = parser.add_mutually_exclusive_group()
+    view.add_argument("--headless", action="store_true", default=True,
+                      help="no window (default)")
+    view.add_argument("--gui", action="store_true", help="open a preview window")
     parser.add_argument("--garment", default=str(REPO_ROOT / "assets" / "samples" / "garment.png"))
     parser.add_argument("--log", default=str(REPO_ROOT / "var" / "logs" / "run.jsonl"))
     parser.add_argument("--seed", type=int, default=0)
@@ -672,10 +764,21 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--width", type=int, default=None)
     parser.add_argument("--height", type=int, default=None)
     parser.add_argument("--config-dir", default=None)
-    # P0-P3 engine-backend overrides (local deps only; no weights/network).
-    parser.add_argument("--physics-solver", default=None, choices=["stub_xpbd", "warp"])
-    parser.add_argument("--render-backend", default=None, choices=["stub", "opencv"])
-    parser.add_argument("--geometry", default=None, choices=["stub", "silhouette"])
+    # Backend overrides. Choices mirror the documented config domains so a
+    # value accepted here is always one the factory understands.
+    parser.add_argument("--physics-solver", default=None,
+                        choices=["stub_xpbd", "warp", "diffcloth"])
+    parser.add_argument("--render-backend", default=None,
+                        choices=["stub", "opencv", "3dgs", "gaussian"])
+    parser.add_argument("--geometry", default=None,
+                        choices=["stub", "silhouette", "pattern", "sewformer", "instantmesh", "garmentrec"])
+    parser.add_argument("--keyframe-backend", default=None,
+                        choices=["stub", "fashn", "fashn_vton_1_5", "catvton", "leffa", "omnitry"],
+                        help="generation backend; requires --mode real|hybrid to take effect")
+    parser.add_argument("--grad-backend", default=None, choices=["fd", "warp"],
+                        help="pipeline C gradient source (warp needs the engine extra)")
+    parser.add_argument("--self-collision", action="store_true",
+                        help="enable vertex-level self-collision in the Warp solver")
     parser.add_argument("--mesh-resolution", nargs=2, type=int, default=None, metavar=("AROUND", "HEIGHT"))
     return parser.parse_args(argv)
 
@@ -693,17 +796,21 @@ def main(argv: list[str] | None = None) -> int:
         cfg.set("render.backend", args.render_backend)
     if args.geometry:
         cfg.set("asset.geometry", args.geometry)
+    if args.keyframe_backend:
+        cfg.set("keyframe.backend", args.keyframe_backend)
+    if args.grad_backend:
+        cfg.set("calibration.grad_backend", args.grad_backend)
+    if args.self_collision:
+        cfg.set("physics.self_collision", True)
     if args.mesh_resolution:
         cfg.set("asset.mesh_resolution", [int(args.mesh_resolution[0]), int(args.mesh_resolution[1])])
-    cfg.set("mode", args.mode or cfg.get("mode"))
-    if args.gui:
-        args.headless = False
+    headless = not args.gui
     garment = load_garment_image(args.garment, cfg)
     runner = MockRunner(
         cfg,
         garment_image=garment,
         log_path=Path(args.log),
-        headless=args.headless,
+        headless=headless,
         seed=args.seed,
         enable_keyframes=not args.no_keyframes,
         enable_calibration=not args.no_calibration,

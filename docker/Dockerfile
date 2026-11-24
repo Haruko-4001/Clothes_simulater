@@ -19,5 +19,10 @@ COPY Makefile ./
 
 RUN pip install --no-cache-dir -e ".[test]"
 
+# Optional engine backends (Warp XPBD + OpenCV rasteriser). Uncomment to build
+# the engine image. NOTE: python:3.11-slim has no CUDA toolkit, so Warp would
+# run its CPU path only — the README GPU benchmark is NOT reproducible here.
+# RUN pip install --no-cache-dir -e ".[test,engine]"
+
 # Mock mode needs no GPU / network / weights / GUI.
 CMD ["python", "-m", "app.main", "--mode", "mock", "--frames", "300", "--headless"]

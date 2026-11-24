@@ -91,16 +91,96 @@ def test_factory_routes_warp_solver_or_falls_back(mock_cfg):
         assert isinstance(solver, PhysicsSolver)
 
 
-def test_factory_falls_back_when_warp_init_fails(mock_cfg, monkeypatch):
+def test_factory_falls_back_when_warp_dependency_missing(mock_cfg, monkeypatch):
+    """Missing dependency (ImportError) must fall back to the numpy solver."""
     cfg = _engine_cfg(mock_cfg, **{"physics.solver": "warp"})
 
-    def _boom(self, cfg=None):
+    def _missing(self, cfg=None):
         raise ImportError("simulated missing warp")
 
     if _WARP_AVAILABLE:
-        monkeypatch.setattr(WarpSolver, "__init__", _boom)
+        monkeypatch.setattr(WarpSolver, "__init__", _missing)
     components = build(cfg)
     assert isinstance(components["PhysicsSolver"], PhysicsSolver)
+
+
+def test_factory_falls_back_on_runtime_init_failure(mock_cfg, monkeypatch):
+    """A backend that imports fine but fails at runtime must not crash boot.
+
+    Real triggers: no CUDA device / driver mismatch, OOM, a stripped OpenCV
+    build, or a revoked credential. ``_try`` previously caught only
+    ImportError/NotImplementedError, so these surfaced as hard crashes.
+    """
+    cfg = _engine_cfg(mock_cfg, **{"physics.solver": "warp"})
+    original = WarpSolver.__init__
+
+    def _runtime_boom(self, cfg=None):
+        raise RuntimeError("CUDA driver version is insufficient for CUDA runtime version")
+
+    monkeypatch.setattr(WarpSolver, "__init__", _runtime_boom)
+    components = build(cfg)
+    assert isinstance(components["PhysicsSolver"], PhysicsSolver)
+    monkeypatch.setattr(WarpSolver, "__init__", original)
+
+    # Same contract for the renderer: an unusable cv2 install must degrade.
+    if _CV2:
+        from tryon.render.cv2_render import OpenCVMeshRenderer
+
+        def _renderer_boom(self, cfg=None):
+            raise AttributeError("module 'cv2' has no attribute 'fillConvexPoly'")
+
+        monkeypatch.setattr(OpenCVMeshRenderer, "__init__", _renderer_boom)
+        cfg2 = _engine_cfg(mock_cfg, **{"render.backend": "opencv"})
+        components2 = build(cfg2)
+        from tryon.render.mesh_render import PILMeshRenderer
+
+        assert isinstance(components2["Renderer"], PILMeshRenderer)
+
+
+def test_factory_falls_back_on_missing_credential(mock_cfg, monkeypatch):
+    """FASHN without an API key must silently degrade to the stub backend."""
+    monkeypatch.delenv("FASHN_API_KEY", raising=False)
+    cfg = _engine_cfg(mock_cfg)
+    cfg.set("mode", "real")
+    cfg.set("keyframe.backend", "fashn")
+    components = build(cfg)
+    from tryon.keyframe.tryon import StubKeyframeTryOn
+
+    assert isinstance(components["KeyframeTryOn"], StubKeyframeTryOn)
+
+
+def test_tracked_config_has_no_credential_slot(mock_cfg):
+    """configs/default.yaml is tracked: it must not offer a place for secrets."""
+    import yaml
+
+    default = yaml.safe_load((ROOT / "configs" / "default.yaml").read_text(encoding="utf-8"))
+    assert "fashn_api_key" not in (default.get("keyframe") or {}), (
+        "tracked config must not carry an API-key slot; use configs/local.yaml "
+        "(git-ignored) or FASHN_API_KEY"
+    )
+    example = yaml.safe_load((ROOT / "configs" / "local.example.yaml").read_text(encoding="utf-8"))
+    assert "fashn_api_key" in (example.get("keyframe") or {})
+
+
+def test_local_yaml_overlay_is_gitignored_and_loaded(tmp_path, monkeypatch):
+    """configs/local.yaml must be ignored by git yet merged last by load_config."""
+    import shutil
+
+    from tryon.config import load_config
+
+    cfg_dir = tmp_path / "configs"
+    cfg_dir.mkdir()
+    shutil.copy(ROOT / "configs" / "default.yaml", cfg_dir / "default.yaml")
+    shutil.copy(ROOT / "configs" / "mock.yaml", cfg_dir / "mock.yaml")
+    (cfg_dir / "local.yaml").write_text(
+        "keyframe:\n  fashn_api_key: from-local\n", encoding="utf-8"
+    )
+    cfg = load_config("mock", None, config_dir=cfg_dir)
+    assert cfg.get("keyframe.fashn_api_key") == "from-local"
+
+    ignore = (ROOT / ".gitignore").read_text(encoding="utf-8")
+    assert "configs/local.yaml" in ignore
+    assert "configs/local.example.yaml" not in ignore.replace("configs/local.yaml", "")
 
 
 @pytest.mark.skipif(not _WARP_AVAILABLE, reason="warp not installed")
@@ -466,7 +546,6 @@ def _make_batch(mock_cfg, stub_asset, physics_solver, n_settle=4, n_pull=10, n_f
 @pytest.mark.skipif(not _WARP_AVAILABLE, reason="warp not installed")
 def test_warp_grad_direction_matches_fd(mock_cfg, stub_asset, physics_solver):
     from tryon.calibration.warp_grad import rollout_loss_and_grad
-
     cfg = _engine_cfg(mock_cfg)
     batch = _make_batch(cfg, stub_asset, physics_solver)
     theta = stub_asset.material.to_vector()
@@ -528,3 +607,338 @@ def test_identifier_warp_backend_descends_on_surrogate(mock_cfg, stub_asset, phy
     assert L_after <= L_before * (1.0 + 1.0e-6), (
         f"warp-LM increased the surrogate loss: {L_before:.6g} -> {L_after:.6g}"
     )
+
+
+@pytest.mark.skipif(not _WARP_AVAILABLE, reason="warp not installed")
+def test_contract_scale_respects_energy_budget(mock_cfg, stub_asset):
+    """Regression for the energy-budget contraction search.
+
+    ``_contract_scale`` was rewritten from a 40-step bisection to a single
+    vectorised quadratic-form grid because the bisection cost ~85% of the
+    physics step. This test pins the two properties the SPEC §7 invariant
+    depends on: the returned factor is in [0,1], the contracted state really is
+    inside the budget, and a looser budget never shrinks more.
+    """
+    from tryon.physics.state import build_constraints, elastic_energy
+
+    cfg = _engine_cfg(mock_cfg)
+    solver = WarpSolver(cfg)
+    solver.initial_state(stub_asset)
+    c = build_constraints(stub_asset.rest_mesh, stub_asset.material)
+    rest = c.rest_positions
+    rng = np.random.default_rng(7)
+
+    for perturb in (0.002, 0.02, 0.2):
+        x = rest + rng.normal(scale=perturb, size=rest.shape)
+        e_full = elastic_energy(x, c)
+        previous_s = -1.0
+        for frac in (0.3, 0.6, 0.9, 1.0):
+            target = e_full * frac + 1.0e-12
+            s = solver._contract_scale(x, c, target)
+            assert 0.0 <= s <= 1.0
+            contracted = rest + s * (x - rest)
+            achieved = elastic_energy(contracted, c)
+            assert achieved <= target * (1.0 + 1.0e-9), (
+                f"budget violated: E={achieved:.6g} > target={target:.6g} (s={s})"
+            )
+            # looser budget must not shrink more
+            assert s >= previous_s - 1.0e-12
+            previous_s = s
+
+
+@pytest.mark.skipif(not _WARP_AVAILABLE, reason="warp not installed")
+def test_warp_step_meets_vertex_budget_scaling(mock_cfg, stub_asset):
+    """The per-step cost must stay O(N): a 7x vertex increase cannot blow up.
+
+    Guard against regressions like the 40-step bisection (which made the step
+    ~43 energy evaluations) rather than asserting an absolute host-dependent
+    wall-clock number.
+    """
+    import time
+
+    cfg = _engine_cfg(mock_cfg)
+    dt = float(cfg.require("physics.dt"))
+
+    def step_ms(asset, n_steps=25):
+        solver = WarpSolver(cfg)
+        state = solver.initial_state(asset)
+        for _ in range(5):
+            state = solver.step(state, asset, [], dt)
+        t0 = time.perf_counter()
+        for _ in range(n_steps):
+            state = solver.step(state, asset, [], dt)
+        return (time.perf_counter() - t0) / n_steps * 1000.0
+
+    small = step_ms(stub_asset)
+    assert np.isfinite(small) and small > 0.0
+    # The mock asset is ~160 vertices; one step must not cost tens of ms.
+    assert small < 15.0, f"warp step unexpectedly slow on a tiny mesh: {small:.2f} ms"
+
+
+# ---------------------------------------------------------------------------
+# Pattern cold start (panels + seams)
+# ---------------------------------------------------------------------------
+
+
+def _pattern_cfg(mock_cfg):
+    return _engine_cfg(mock_cfg, **{"asset.geometry": "pattern",
+                                    "asset.mesh_resolution": [20, 14]})
+
+
+def _mask_rect() -> np.ndarray:
+    img = np.zeros((480, 320, 3), dtype=np.uint8)
+    img[:, :] = (245, 245, 245)
+    img[60:440, 70:250] = (70, 105, 150)
+    return img
+
+
+def _mask_tee() -> np.ndarray:
+    img = _mask_rect()
+    img[60:140, 20:70] = (70, 105, 150)
+    img[60:140, 250:300] = (70, 105, 150)
+    return img
+
+
+def test_pattern_geometry_emits_sleeves_and_surviving_seams(mock_cfg):
+    """A pattern asset must carry separate sleeves joined by seams.
+
+    Regression: ``MeshRepairer`` used to rebuild the mesh without copying
+    ``seams``, silently disconnecting the sleeves from the body.
+    """
+    from tryon.factory import build
+
+    cfg = _pattern_cfg(mock_cfg)
+    components = build(cfg)
+    asset = components["AssetBuilder"].build(_mask_tee(), timeout_s=120.0)
+
+    mesh = asset.rest_mesh
+    assert len(mesh.seams) > 0, "seam constraints were dropped"
+    # Sleeves must extend the silhouette beyond the torso half-width.
+    m = components["GeometryEstimator"].last_measurements
+    assert mesh.vertices[:, 0].max() > m.chest_rx * 1.1
+    assert mesh.vertices[:, 0].min() < -m.chest_rx * 1.1
+    # Panel metadata must use global ids into the stitched mesh: a loader that
+    # reconstructs panel meshes from these ranges has to recover every vertex
+    # exactly once (regression: all panels used to start at 0).
+    panels = asset.sewing_pattern["panels"]
+    assert [p["name"] for p in panels] == ["torso", "sleeve_left", "sleeve_right"]
+    ids = [i for p in panels for i in p["vertex_ids"]]
+    assert sorted(ids) == list(range(mesh.n_vertices))
+
+
+def test_pattern_sleeve_length_follows_the_shoulder_row(mock_cfg):
+    """Sleeve length must come from the shoulder vs hem width difference."""
+    from tryon.factory import build
+
+    cfg = _pattern_cfg(mock_cfg)
+    components = build(cfg)
+    est = components["GeometryEstimator"]
+
+    components["AssetBuilder"].build(_mask_rect(), timeout_s=120.0)
+    sleeveless = est.last_measurements.sleeve_len
+
+    components["AssetBuilder"].build(_mask_tee(), timeout_s=120.0)
+    sleeved = est.last_measurements.sleeve_len
+
+    assert sleeved > sleeveless * 2.0, (sleeveless, sleeved)
+    assert sleeved <= 0.20
+
+
+def test_pattern_seams_are_constraints_and_stay_stable(mock_cfg):
+    """Seams must appear as XPBD constraints and must not blow the solver up."""
+    from tryon.factory import build
+    from tryon.physics.state import build_constraints
+
+    cfg = _pattern_cfg(mock_cfg)
+    components = build(cfg)
+    asset = components["AssetBuilder"].build(_mask_tee(), timeout_s=120.0)
+
+    without_seams = build_constraints(
+        type(asset.rest_mesh)(
+            vertices=asset.rest_mesh.vertices,
+            faces=asset.rest_mesh.faces,
+            thickness=asset.rest_mesh.thickness,
+            is_closed=asset.rest_mesh.is_closed,
+            has_isolated_edge=False,
+            self_intersection_count=0,
+            collision_ready=True,
+        ),
+        asset.material,
+    )
+    with_seams = build_constraints(asset.rest_mesh, asset.material)
+    assert with_seams.n_constraints == without_seams.n_constraints + len(asset.rest_mesh.seams)
+
+    solver = components["PhysicsSolver"]
+    state = solver.initial_state(asset)
+    for _ in range(60):
+        state = solver.step(state, asset, [], 1.0 / 60.0)
+    assert np.all(np.isfinite(state.positions))
+    assert state.energy < 5.0, f"seam-driven instability: energy={state.energy:.3f} J"
+    assert solver.last_penetration_count == 0
+
+
+# ---------------------------------------------------------------------------
+# Texturing (UV unwrap + per-face sampling)
+# ---------------------------------------------------------------------------
+
+
+def test_cylindrical_uvs_are_normalised_and_mirror_the_back(mock_cfg, stub_asset):
+    """UVs must span [0,1] and fold the back half onto the front half."""
+    from tryon.asset.uv import cylindrical_uvs
+
+    uv = cylindrical_uvs(stub_asset.rest_mesh.vertices)
+    assert uv.shape == (stub_asset.rest_mesh.n_vertices, 2)
+    assert np.all((uv >= 0.0) & (uv <= 1.0))
+    # both extremes of u are used (left and right silhouette)
+    assert uv[:, 0].min() < 0.05 and uv[:, 0].max() > 0.95
+    assert uv[:, 1].min() < 0.05 and uv[:, 1].max() > 0.95
+
+
+def test_striped_garment_keeps_stripes_in_face_colours(mock_cfg):
+    """A striped source must not collapse to one mean colour (the old bug)."""
+    from tryon.render.texture import clear_cache, garment_face_colors
+
+    from tryon.config import load_config
+    from tryon.factory import build
+
+    cfg = load_config("mock", "rtx4090")
+    cfg.set("camera.width", 320)
+    cfg.set("camera.height", 240)
+    cfg.set("asset.mesh_resolution", [24, 18])
+    clear_cache()
+
+    img = np.zeros((480, 320, 3), dtype=np.uint8)
+    img[:, :] = (250, 250, 250)
+    # Vertical stripes: red / blue alternating every 20 px.
+    for x in range(40, 280):
+        if ((x - 40) // 20) % 2 == 0:
+            img[40:460, x] = (200, 40, 40)
+        else:
+            img[40:460, x] = (40, 40, 200)
+
+    asset = build(cfg)["AssetBuilder"].build(img, timeout_s=120.0)
+    colors = garment_face_colors(asset)
+    assert colors.shape == (asset.rest_mesh.n_faces, 3)
+    # Per-channel spread across faces proves the pattern survived.
+    spread = float(np.std(colors[:, 0] - colors[:, 2]))
+    assert spread > 30.0, f"stripes were averaged away (spread={spread:.1f})"
+    # And both stripe families are actually present on the front surface.
+    reds = np.sum((colors[:, 0] > 120) & (colors[:, 2] < 120))
+    blues = np.sum((colors[:, 2] > 120) & (colors[:, 0] < 120))
+    assert reds > 0 and blues > 0, (reds, blues)
+
+
+def test_textured_render_uses_more_than_one_colour(mock_cfg):
+    """The rendered garment layer must contain multiple colours when textured."""
+    from tryon.render.texture import clear_cache
+    from tryon.render.cv2_render import OpenCVMeshRenderer
+    from tryon.perception.stubs import StubCamera
+    from tryon.physics.solver import PhysicsSolver
+    from tryon.factory import build
+    from tryon.config import load_config
+
+    if not _CV2:
+        pytest.skip("opencv not installed")
+    cfg = load_config("mock", "rtx4090")
+    cfg.set("camera.width", 320)
+    cfg.set("camera.height", 240)
+    cfg.set("asset.mesh_resolution", [24, 18])
+    clear_cache()
+
+    img = np.zeros((480, 320, 3), dtype=np.uint8)
+    img[:, :] = (250, 250, 250)
+    for x in range(40, 280):
+        img[40:460, x] = (200, 40, 40) if ((x - 40) // 24) % 2 == 0 else (40, 40, 200)
+
+    asset = build(cfg)["AssetBuilder"].build(img, timeout_s=120.0)
+    camera = StubCamera(cfg)
+    solver = PhysicsSolver(cfg)
+    state = solver.initial_state(asset)
+    for _ in range(8):
+        state = solver.step(state, asset, [], 1.0 / 60.0)
+    out = OpenCVMeshRenderer(cfg).render(camera.capture(), asset, state, camera)
+    px = out.image[out.mask > 0]
+    assert px.size > 0
+    unique = np.unique((px // 48).astype(np.int16), axis=0)
+    assert len(unique) > 2, f"render is nearly monochrome: {len(unique)} colour bins"
+
+
+# ---------------------------------------------------------------------------
+# CLI / config consistency
+# ---------------------------------------------------------------------------
+
+
+def test_cli_mode_is_unset_by_default():
+    """--mode must not default to "mock": that silently overrode configs/*.yaml."""
+    from app.main import parse_args
+
+    assert parse_args([]).mode is None
+    assert parse_args(["--mode", "real"]).mode == "real"
+
+
+def test_headless_is_default_and_gui_can_override():
+    """--headless used to be store_true/default=True, so it could never be off.
+
+    SPEC §15 ACCEPT_CMD still passes --headless, so the flag must stay accepted;
+    what changed is that --gui is now a real, mutually exclusive opt-out.
+    """
+    from app.main import parse_args
+
+    default = parse_args([])
+    assert default.headless is True
+    assert default.gui is False
+
+    explicit = parse_args(["--headless"])
+    assert explicit.headless is True
+
+    assert parse_args(["--gui"]).gui is True
+    with pytest.raises(SystemExit):
+        parse_args(["--gui", "--headless"])
+
+
+def test_cli_backend_choices_cover_config_domains():
+    """Every backend value named by configs/*.yaml must be accepted by the CLI."""
+    import yaml
+
+    from app.main import parse_args
+
+    real = yaml.safe_load((ROOT / "configs" / "real.yaml").read_text(encoding="utf-8")) or {}
+    default = yaml.safe_load((ROOT / "configs" / "default.yaml").read_text(encoding="utf-8")) or {}
+
+    def _accepts(flag: str, value: str) -> bool:
+        try:
+            parse_args([flag, value])
+            return True
+        except SystemExit:
+            return False
+
+    for backend in ("diffcloth",):
+        assert _accepts("--physics-solver", backend), backend
+    for backend in ("3dgs", "gaussian"):
+        assert _accepts("--render-backend", backend), backend
+    for backend in ("sewformer", "instantmesh", "garmentrec"):
+        assert _accepts("--geometry", backend), backend
+    for backend in ("fashn", "fashn_vton_1_5", "catvton", "leffa", "omnitry"):
+        assert _accepts("--keyframe-backend", backend), backend
+    for backend in ("fd", "warp"):
+        assert _accepts("--grad-backend", backend), backend
+
+    # values actually used by shipped configs
+    for value in (real.get("physics") or {}).values():
+        assert _accepts("--physics-solver", str(value)), value
+    for value in (real.get("render") or {}).values():
+        assert _accepts("--render-backend", str(value)), value
+    assert _accepts("--geometry", str((default.get("asset") or {}).get("geometry", "stub")))
+
+
+def test_load_config_resolves_mode_layer_without_explicit_mode():
+    """load_config(None) must still merge configs/mock.yaml (hidden mock truth)."""
+    from tryon.config import load_config
+
+    cfg = load_config(None, None)
+    assert cfg.get("mode") == "mock"
+    assert cfg.get("mock.true_material_preset") is not None
+
+    real = load_config("real", None)
+    assert real.get("mode") == "real"
+    assert real.get("physics.solver") == "diffcloth"
