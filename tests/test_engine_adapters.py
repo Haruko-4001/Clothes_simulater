@@ -777,6 +777,45 @@ def test_pattern_seams_are_constraints_and_stay_stable(mock_cfg):
     assert solver.last_penetration_count == 0
 
 
+def test_newton_vbd_optional_backend_steps_and_preserves_shape(mock_cfg):
+    """The optional Newton VBD backend must run behind the PhysicsSolver API."""
+    from tryon.factory import build
+    from tryon.physics.newton_solver import NewtonVBDSolver, _NEWTON_AVAILABLE
+
+    cfg = _pattern_cfg(mock_cfg)
+    if not _NEWTON_AVAILABLE:
+        with pytest.raises(ImportError):
+            NewtonVBDSolver(cfg)
+        return
+
+    components = build(cfg)
+    asset = components["AssetBuilder"].build(_mask_tee(), timeout_s=120.0)
+    solver = NewtonVBDSolver(cfg)
+    state = solver.initial_state(asset)
+    for _ in range(3):
+        state = solver.step(state, asset, [], 1.0 / 60.0)
+
+    assert state.positions.shape == asset.rest_mesh.vertices.shape
+    assert np.all(np.isfinite(state.positions))
+    assert np.all(np.isfinite(state.velocities))
+    assert state.step == 3
+    assert solver.last_step_ms >= 0.0
+    # Newton's soft contacts may report a few penetrations; the adapter must
+    # expose the count rather than claiming a hard non-penetration guarantee.
+    assert solver.last_penetration_count >= 0
+
+
+def test_factory_routes_newton_when_installed(mock_cfg):
+    from tryon.factory import build
+    from tryon.physics.newton_solver import NewtonVBDSolver, _NEWTON_AVAILABLE
+
+    if not _NEWTON_AVAILABLE:
+        pytest.skip("newton is not installed")
+    cfg = _engine_cfg(mock_cfg, **{"physics.solver": "newton_vbd", "mode": "mock"})
+    components = build(cfg)
+    assert isinstance(components["PhysicsSolver"], NewtonVBDSolver)
+
+
 # ---------------------------------------------------------------------------
 # Texturing (UV unwrap + per-face sampling)
 # ---------------------------------------------------------------------------

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 from pathlib import Path
 import sys
 
@@ -118,9 +119,18 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     def probe(module: str) -> dict:
         try:
             mod = importlib.import_module(module)
-            return {"available": True, "version": str(getattr(mod, "__version__", "?"))}
         except Exception as exc:  # noqa: BLE001 - capability probe
             return {"available": False, "reason": f"{type(exc).__name__}: {exc}"}
+        # Prefer distribution metadata: Flask 3.1 deprecates ``__version__`` and
+        # reading it emits a DeprecationWarning. Fall back for cv2/warp, whose
+        # distribution names differ from their import names.
+        try:
+            from importlib.metadata import version as dist_version
+
+            version = dist_version(module)
+        except Exception:
+            version = getattr(mod, "__version__", "?")
+        return {"available": True, "version": str(version)}
 
     def file_present(env_or_cfg: str | None) -> bool:
         if not env_or_cfg:
@@ -129,8 +139,9 @@ def cmd_doctor(args: argparse.Namespace) -> int:
 
         return Path(os.path.expandvars(env_or_cfg)).exists()
 
-    api_key = cfg.get("keyframe.fashn_api_key") or __import__("os").environ.get("FASHN_API_KEY")
+    api_key = cfg.get("keyframe.fashn_api_key") or os.environ.get("FASHN_API_KEY")
     vendor = REPO_ROOT / "adapters_vendor"
+    warp_probe = probe("warp")
 
     capabilities = {
         "pipeline_A_geometry": {
@@ -149,7 +160,17 @@ def cmd_doctor(args: argparse.Namespace) -> int:
         },
         "pipeline_B_physics": {
             "numpy_xpbd": "always available",
-            "warp": probe("warp"),
+            "warp": warp_probe,
+            # Evaluated 2026-11 (see PRODUCT.md §6.1). Neither is installed by
+            # this repo; the probes only report whether the host already has it.
+            "newton_vbd": {
+                **probe("newton"),
+                "role": "optional VBD backend (experimental, integrated; `.[newton]`)",
+            },
+            "pyuipc_ipc": {
+                **probe("pyuipc"),
+                "role": "offline IPC non-penetration reference; not a runtime backend",
+            },
         },
         "pipeline_B_perception": {
             "stub_trackers": "always available (mock scene only)",
@@ -174,7 +195,11 @@ def cmd_doctor(args: argparse.Namespace) -> int:
         },
         "pipeline_C_calibration": {
             "fd_gradients": "always available",
-            "warp_ad": probe("warp") if not probe("warp")["available"] else {"available": True},
+            "warp_ad": {"available": True} if warp_probe["available"] else warp_probe,
+        },
+        "product_shell": {
+            "flask": probe("flask"),
+            "serve_entry": "app.serve:main (local development preview; no auth/TLS)",
         },
     }
 
@@ -183,7 +208,7 @@ def cmd_doctor(args: argparse.Namespace) -> int:
         "host": {
             "python": platform.python_version(),
             "platform": platform.platform(),
-            "cuda_visible": bool(__import__("os").environ.get("CUDA_VISIBLE_DEVICES", "")),
+            "cuda_visible": bool(os.environ.get("CUDA_VISIBLE_DEVICES", "")),
         },
         "selected": {
             "mode": cfg.get("mode"),

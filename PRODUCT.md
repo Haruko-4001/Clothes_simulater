@@ -2,6 +2,7 @@
 
 > 本文回答两件事：**这个项目应该做成什么产品形态**，以及**当前代码离那个形态还差什么**。
 > 技术规格以 `SPEC.md` 为准；本文只谈产品与落地，不覆盖规格。
+> 状态标记：✅ 已实现 / 🟡 部分实现 / ⬜ 未实现；运行事实以 `README.md` 与 `python -m app.cli doctor` 为准。
 
 ---
 
@@ -120,6 +121,18 @@ MVP 明确不做：
 python -m app.cli doctor
 # 或浏览器打开 http://127.0.0.1:8000/api/doctor
 ```
+
+### 6.1 外部引擎评估（技术雷达，2026-11）
+
+| 方案 | 结论 | 用途 / 条件 |
+|---|---|---|
+| Warp XPBD（当前） | **采用** | 实时主链路；5936 顶点 5.27 ms/步，测试穿透 0 |
+| OGC / Planar-DAT（无穿透截断） | **部分采用** | DAT 已作为 Newton VBD 的 `rigid_soft_enable_dat` 启用；OGC 接触模型本身未接入，核心 XPBD 接触路径未改 |
+| Newton VBD（`pip install newton`，Apache-2.0） | **可选后端（实验）** | `physics.solver: newton_vbd` + `.[newton]`；544 顶点约 4.9 ms/步、[28,20] 约 4.8 ms/步；软接触仍有少量穿透，默认仍用 XPBD |
+| pyuipc / libuipc（Stiff-GIPC） | **仅离线** | IPC 非穿透 ground truth；CUDA/C++，不进实时循环 |
+| MuJoCo 4.0 / Genesis World 1.0 | **不采用** | 机器人/通用仿真抽象，不是服装管线；仅作参考 |
+
+截至本版本，Warp 与 Newton VBD 已接入（后者为可选、实验性）；pyuipc 与 MuJoCo/Genesis 未安装。`doctor` 只负责如实报告本机可用性，不会自动安装。
 
 ---
 

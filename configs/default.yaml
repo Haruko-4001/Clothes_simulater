@@ -23,7 +23,7 @@ physics:                         # §10.1
   substeps: 4
   dt: 0.016667
   max_vertices: 6000
-  solver: stub_xpbd              # stub_xpbd|diffcloth|warp
+  solver: stub_xpbd              # stub_xpbd|diffcloth|warp|newton_vbd
   xpbd_iters: 6
   alpha_M: 0.02                  # Rayleigh
   alpha_K: 0.01
@@ -35,6 +35,14 @@ physics:                         # §10.1
   energy_settle_j: 1.0e-3       # E_min for REBOUNDING → IDLE
   self_collision: false          # vertex-vertex hash-grid repulsion (Warp solver)
   self_collision_radius_m: 0.004
+  # Optional Newton VBD backend (`pip install -e ".[newton]"`). These are only
+  # read when physics.solver == newton_vbd; the default XPBD path ignores them.
+  newton_iterations: 2
+  newton_dat: true               # Divide-and-Truncate rigid-soft contact
+  newton_dat_interval: true
+  newton_collapse_shell: true    # collapse the double-sided shell per panel
+  newton_contact_gap: 0.01
+  newton_seam_ke: 1.0e3
 perception:                      # P1 real adapters (real/hybrid mode)
   body_backend: mediapipe        # mediapipe|legacy
   hand_backend: mediapipe        # mediapipe|legacy

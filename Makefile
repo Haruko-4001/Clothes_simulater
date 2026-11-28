@@ -1,7 +1,7 @@
 PYTHON ?= python
 IMG ?= assets/samples/garment.png
 
-.PHONY: install install-engine install-perception test mock-run bootstrap-asset eval-report bench serve smoke clean
+.PHONY: install install-engine install-perception install-newton test mock-run bootstrap-asset eval-report bench serve smoke clean
 
 install:
 	$(PYTHON) -m pip install -e ".[test]"
@@ -11,6 +11,9 @@ install-engine:
 
 install-perception:
 	$(PYTHON) -m pip install -e ".[perception]"
+
+install-newton:
+	$(PYTHON) -m pip install -e ".[newton]"
 
 test:
 	$(PYTHON) -m pytest tests -q

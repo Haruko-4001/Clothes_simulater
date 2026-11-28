@@ -13,6 +13,10 @@ dependencies = [
   "numpy>=1.26",
   "Pillow>=10.0",
   "PyYAML>=6.0",
+  # The product's primary form is the browser shell (app/serve.py). Flask is a
+  # pure-Python dependency and does not affect the mock guarantee (no GPU,
+  # weights or network at runtime).
+  "Flask>=3.0",
 ]
 
 [project.optional-dependencies]
@@ -23,6 +27,11 @@ test = ["pytest>=8.0"]
 engine = [
   "warp-lang>=1.19",
   "opencv-python-headless>=4.9",
+]
+# Optional experimental physics backend. Newton's VBD solver is built on Warp;
+# it is NOT part of the default install and falls back to XPBD when absent.
+newton = [
+  "newton>=1.8",
 ]
 # P1 perception (real/hybrid modes only). The adapters use the legacy
 # Solutions API (mp.solutions.pose / mp.solutions.hands), which is only
@@ -36,6 +45,7 @@ perception = [
 [project.scripts]
 tryon-run = "app.main:main"
 tryon-cli = "app.cli:main"
+tryon-serve = "app.serve:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

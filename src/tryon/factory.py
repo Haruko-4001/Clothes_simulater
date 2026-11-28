@@ -124,6 +124,12 @@ def build(cfg: Config) -> dict[str, Any]:
         # Warp runs on CUDA *or* CPU with no weights and no network, so it is
         # selectable in every mode (mock included).
         physics = _try(WarpSolver, PhysicsSolver, "PhysicsSolver", cfg)
+    elif physics_backend in {"newton_vbd", "newton"}:
+        # Optional experimental VBD backend; building the Newton model happens
+        # on first initial_state(), so construction is cheap and fallback safe.
+        from .physics.newton_solver import NewtonVBDSolver
+
+        physics = _try(NewtonVBDSolver, PhysicsSolver, "PhysicsSolver", cfg)
     elif mode in {"real", "hybrid"} and physics_backend == "diffcloth":
         physics = _try(DiffClothSolver, PhysicsSolver, "PhysicsSolver", cfg)
     else:

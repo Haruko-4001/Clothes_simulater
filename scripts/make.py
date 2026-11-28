@@ -15,6 +15,7 @@ TARGETS = (
     "install",
     "install-engine",
     "install-perception",
+    "install-newton",
     "test",
     "mock-run",
     "bootstrap-asset",
@@ -40,6 +41,8 @@ def command_for(target: str, env: Mapping[str, str]) -> list[str]:
         return [py, "-m", "pip", "install", "-e", ".[test,engine]"]
     if target == "install-perception":
         return [py, "-m", "pip", "install", "-e", ".[perception]"]
+    if target == "install-newton":
+        return [py, "-m", "pip", "install", "-e", ".[newton]"]
     if target == "test":
         return [py, "-m", "pytest", "tests", "-q"]
     if target == "mock-run":

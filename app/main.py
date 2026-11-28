@@ -507,6 +507,10 @@ class MockRunner:
             self.logger.close()
         return self.summary()
 
+    def step(self) -> None:
+        """Advance exactly one frame; public entry point for host shells."""
+        self._step_frame()
+
     def _step_frame(self) -> None:
         t_frame0 = time.perf_counter()
         frame: Frame = self.camera.capture()
@@ -767,7 +771,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     # Backend overrides. Choices mirror the documented config domains so a
     # value accepted here is always one the factory understands.
     parser.add_argument("--physics-solver", default=None,
-                        choices=["stub_xpbd", "warp", "diffcloth"])
+                        choices=["stub_xpbd", "warp", "newton_vbd", "diffcloth"])
     parser.add_argument("--render-backend", default=None,
                         choices=["stub", "opencv", "3dgs", "gaussian"])
     parser.add_argument("--geometry", default=None,

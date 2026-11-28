@@ -6,6 +6,12 @@ This is the product form described in PRODUCT.md: a browser-first surface that
 serves the running 30 fps loop as an MJPEG stream, exposes machine-readable
 status, and lets a user try another garment without restarting.
 
+Security boundary: this is a **local development preview**, not a production
+server. It binds ``127.0.0.1`` by default and provides no authentication, TLS,
+rate limiting or connection caps. Exposing it beyond localhost requires a
+production WSGI server plus a reverse proxy that terminates TLS and enforces
+access control.
+
 Why a web shell first: it needs no app-store review, runs on the same machine
 that owns the GPU, and can be embedded in a merchant's product page as an
 <iframe>. A native app / mini-program would only re-wrap the same endpoints.
@@ -40,7 +46,12 @@ SRC = REPO_ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
-from tryon.logging import setup_logging  # noqa: E402
+from tryon.logging import log_event, setup_logging  # noqa: E402
+
+MAX_UPLOAD_BYTES = 12 * 1024 * 1024
+# Decoded pixel budget: a 12 MB JPEG can still expand to hundreds of MB in RAM.
+# 24 MP is above any phone/DSLR garment photo used for texture capture.
+MAX_UPLOAD_PIXELS = 24_000_000
 
 INDEX_HTML = """<!doctype html>
 <html lang="zh-CN"><head>
@@ -195,11 +206,15 @@ class LiveSession:
         )
         self.period = 1.0 / max(target_fps, 1.0)
         self._lock = threading.RLock()
+        self._jpeg_lock = threading.Lock()
         self._stop = threading.Event()
         self._thread = threading.Thread(target=self._loop, name="tryon-live", daemon=True)
         self.frames = 0
         self._jpeg: bytes | None = None
         self._jpeg_id = -1
+        self.swapping = False
+        self.last_error: str | None = None
+        self.last_error_at: float | None = None
 
     # -- lifecycle -------------------------------------------------------
     def start(self) -> None:
@@ -209,15 +224,22 @@ class LiveSession:
         self._stop.set()
         self._thread.join(timeout=2.0)
 
+    def _record_error(self, where: str, exc: BaseException) -> None:
+        self.last_error = f"{where}: {type(exc).__name__}: {exc}"
+        self.last_error_at = time.time()
+
     def _loop(self) -> None:
         setup_logging()
         next_t = time.perf_counter()
         while not self._stop.is_set():
             try:
                 with self._lock:
-                    self.runner._step_frame()
+                    self.runner.step()
                     self.frames += 1
-            except Exception:  # noqa: BLE001 - keep the stream alive
+            except Exception as exc:  # noqa: BLE001 - keep the stream alive
+                # A silent sleep made "stuck" indistinguishable from "degraded".
+                self._record_error("loop", exc)
+                log_event("E_SERVE_LOOP", f"{type(exc).__name__}: {exc}")
                 time.sleep(0.05)
             next_t += self.period
             sleep = next_t - time.perf_counter()
@@ -228,12 +250,16 @@ class LiveSession:
 
     # -- readers ---------------------------------------------------------
     def latest_jpeg(self) -> bytes | None:
+        # Snapshot under the runner lock, but encode outside it: JPEG encoding
+        # is the slowest reader path and used to stall the physics thread.
         with self._lock:
             frame_id = getattr(self.runner, "frame_id", 0)
             image = getattr(self.runner.display, "last_image", None)
             if image is None:
                 return None
-            if frame_id == self._jpeg_id and self._jpeg is not None:
+            image = np.array(image, copy=True)
+        with self._jpeg_lock:
+            if self._jpeg is not None and frame_id <= self._jpeg_id:
                 return self._jpeg
             self._jpeg = _encode_jpeg(image)
             self._jpeg_id = frame_id
@@ -241,11 +267,42 @@ class LiveSession:
 
     def status(self) -> dict[str, Any]:
         with self._lock:
-            return self.runner.status_payload()
+            payload = self.runner.status_payload()
+            payload["serve"] = {
+                "frames": self.frames,
+                "swapping": self.swapping,
+                "last_error": self.last_error,
+                "last_error_at": self.last_error_at,
+            }
+            return payload
+
+    def active_backends(self) -> dict[str, str]:
+        """Class names actually instantiated (stub fallbacks included)."""
+        components = getattr(self.runner, "components", {})
+        mapping = {
+            "physics": "PhysicsSolver",
+            "render": "Renderer",
+            "geometry": "GeometryEstimator",
+            "body": "BodyTracker",
+            "keyframe": "KeyframeTryOn",
+        }
+        return {
+            name: type(components[key]).__name__
+            for name, key in mapping.items()
+            if key in components
+        }
 
     def swap(self, image: np.ndarray) -> dict[str, Any]:
         with self._lock:
-            return self.runner.swap_garment(image)
+            self.swapping = True
+            self.last_error = None
+            try:
+                return self.runner.swap_garment(image)
+            except Exception as exc:
+                self._record_error("swap", exc)
+                raise
+            finally:
+                self.swapping = False
 
 
 def _encode_jpeg(image: np.ndarray) -> bytes:
@@ -271,7 +328,7 @@ def create_app(session: LiveSession):
     from flask import Flask, Response, jsonify, request, send_from_directory
 
     app = Flask(__name__)
-    app.config["MAX_CONTENT_LENGTH"] = 12 * 1024 * 1024
+    app.config["MAX_CONTENT_LENGTH"] = MAX_UPLOAD_BYTES
 
     @app.get("/")
     def index():
@@ -286,6 +343,10 @@ def create_app(session: LiveSession):
                 "render": session.cfg.get("render.backend"),
                 "geometry": session.cfg.get("asset.geometry"),
                 "keyframe": session.cfg.get("keyframe.backend"),
+                # Configured values above can fall back to stubs at construction
+                # time; this is what the running session actually uses.
+                "active": session.active_backends(),
+                "dev_only": True,
             }
         )
 
@@ -320,8 +381,24 @@ def create_app(session: LiveSession):
         f = request.files.get("image")
         if f is None:
             return jsonify({"ok": False, "error": "no image part"}), 400
+        if f.mimetype and not str(f.mimetype).startswith("image/"):
+            return jsonify(
+                {"ok": False, "error": f"unsupported content type: {f.mimetype}"}
+            ), 415
         try:
-            img = np.asarray(Image.open(f.stream).convert("RGB"), dtype=np.uint8)
+            pil = Image.open(f.stream)
+            width, height = pil.size
+            if width * height > MAX_UPLOAD_PIXELS:
+                return jsonify(
+                    {
+                        "ok": False,
+                        "error": f"image too large: {width}x{height} "
+                                 f"(limit {MAX_UPLOAD_PIXELS} pixels)",
+                    }
+                ), 413
+            img = np.asarray(pil.convert("RGB"), dtype=np.uint8)
+        except Image.DecompressionBombError:
+            return jsonify({"ok": False, "error": "image exceeds the pixel limit"}), 413
         except Exception as exc:  # noqa: BLE001 - user input boundary
             return jsonify({"ok": False, "error": f"decode failed: {exc}"}), 400
         if img.shape[0] < 32 or img.shape[1] < 32:
@@ -360,6 +437,7 @@ def create_app(session: LiveSession):
             "keyframe": session.cfg.get("keyframe.backend"),
             "grad": session.cfg.get("calibration.grad_backend"),
         }
+        payload["selected"]["active"] = session.active_backends()
         return jsonify(payload)
 
     @app.get("/assets/samples/<path:name>")
@@ -373,16 +451,26 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Web product shell for the try-on loop")
     p.add_argument("--host", default="127.0.0.1")
     p.add_argument("--port", type=int, default=8000)
-    p.add_argument("--mode", default="mock", choices=["mock", "real", "hybrid"])
+    # None (not "mock") so configs/real.yaml and configs/hybrid.yaml are not
+    # silently overridden; this mirrors app.main.parse_args.
+    p.add_argument("--mode", default=None, choices=["mock", "real", "hybrid"])
     p.add_argument("--hardware", default=None)
+    p.add_argument("--config-dir", default=None)
     p.add_argument("--garment", default=str(REPO_ROOT / "assets" / "samples" / "garment.png"))
     p.add_argument("--fps", type=float, default=30.0)
     p.add_argument("--width", type=int, default=960)
     p.add_argument("--height", type=int, default=540)
-    p.add_argument("--physics-solver", default=None, choices=["stub_xpbd", "warp", "diffcloth"])
+    p.add_argument("--physics-solver", default=None,
+                   choices=["stub_xpbd", "warp", "newton_vbd", "diffcloth"])
     p.add_argument("--render-backend", default=None, choices=["stub", "opencv", "3dgs", "gaussian"])
     p.add_argument("--geometry", default=None,
                    choices=["stub", "silhouette", "pattern", "sewformer", "instantmesh", "garmentrec"])
+    p.add_argument("--keyframe-backend", default=None,
+                   choices=["stub", "fashn", "fashn_vton_1_5", "catvton", "leffa", "omnitry"],
+                   help="generation backend; requires --mode real|hybrid to take effect")
+    p.add_argument("--grad-backend", default=None, choices=["fd", "warp"])
+    p.add_argument("--self-collision", action="store_true",
+                   help="enable vertex-level self-collision in the Warp solver")
     p.add_argument("--mesh-resolution", nargs=2, type=int, default=None, metavar=("AROUND", "HEIGHT"))
     return p.parse_args(argv)
 
@@ -392,7 +480,7 @@ def main(argv: list[str] | None = None) -> int:
     from app.main import load_garment_image
     from tryon.config import load_config
 
-    cfg = load_config(args.mode, args.hardware)
+    cfg = load_config(args.mode, args.hardware, config_dir=args.config_dir)
     cfg.set("camera.width", int(args.width))
     cfg.set("camera.height", int(args.height))
     if args.physics_solver:
@@ -401,8 +489,22 @@ def main(argv: list[str] | None = None) -> int:
         cfg.set("render.backend", args.render_backend)
     if args.geometry:
         cfg.set("asset.geometry", args.geometry)
+    if args.keyframe_backend:
+        cfg.set("keyframe.backend", args.keyframe_backend)
+    if args.grad_backend:
+        cfg.set("calibration.grad_backend", args.grad_backend)
+    if args.self_collision:
+        cfg.set("physics.self_collision", True)
     if args.mesh_resolution:
         cfg.set("asset.mesh_resolution", [int(args.mesh_resolution[0]), int(args.mesh_resolution[1])])
+
+    if args.host not in {"127.0.0.1", "localhost", "::1"}:
+        print(
+            "[serve] WARNING: binding to "
+            f"{args.host} exposes an unauthenticated development server. "
+            "Use a production WSGI server and a TLS/authenticating reverse proxy.",
+            file=sys.stderr,
+        )
 
     garment = load_garment_image(args.garment, cfg)
     session = LiveSession(cfg, garment, target_fps=float(args.fps))

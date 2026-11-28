@@ -9,6 +9,7 @@
 这是一个**浏览器优先的「面料/版型可交互预览」服务**，不是试衣 App。启动：
 
 ```bash
+make install        # 基础依赖（含 Flask；仍不需要 GPU / 权重 / 网络）
 make serve          # 或 python -m app.serve --physics-solver warp --render-backend opencv
 # 打开 http://127.0.0.1:8000
 ```
@@ -16,6 +17,8 @@ make serve          # 或 python -m app.serve --physics-solver warp --render-bac
 - 实时 MJPEG 流（`/stream`）+ 状态面板（`/api/status`）
 - 拖入衣服图片即换装（`/api/garment`，管线 A 同步重建资产）
 - 能力自检（`/api/doctor` 与 `python -m app.cli doctor`）会逐项告诉你哪些后端在本机真的可用、哪些会回退 Stub
+
+> **边界**：`app/serve.py` 是**本机开发预览**，默认只绑定 `127.0.0.1`，没有鉴权、TLS、限流或连接数上限。对外提供服务前必须换成生产 WSGI（如 gunicorn/waitress）+ 反向代理，并在代理层做 TLS 与访问控制。
 
 ## 三条命令
 
@@ -26,7 +29,7 @@ make mock-run
 # 2) 管线 A：单张衣服图冷启动资产（G1 门禁 + 注册表）
 make bootstrap-asset IMG=assets/samples/garment.png
 
-# 3) 全量测试（SPEC §16 的 12 个规格文件 + 3 个回归文件）
+# 3) 全量测试（SPEC §16 的 12 个规格文件 + 4 个回归文件）
 make test
 ```
 
@@ -34,13 +37,16 @@ make test
 
 ```bash
 make eval-report     # 读取 var/logs/run.jsonl 生成 var/eval/report.{json,md}
-make bench           # 引擎基准，产物 var/eval/bench.json
+make bench           # 引擎微基准（求解器逐步 / 渲染），产物 var/eval/bench.json
+python scripts/bench_e2e.py --frames 300 --repeats 3   # 端到端 A/B（numpy+PIL vs warp+OpenCV）
 python -m app.cli selfcheck
 
 # 可选引擎依赖（warp-lang + opencv-python-headless），缺失时自动回退 stub
 python -m pip install -e ".[engine]"     # 或 make install-engine
 # 可选感知依赖（MediaPipe；无 CPython 3.13 轮子，需 3.10–3.12）
 python -m pip install -e ".[perception]"
+# 可选 Newton VBD 物理后端（实验；首次运行有 1–2 分钟 kernel 编译）
+python -m pip install -e ".[newton]"     # 或 make install-newton
 
 # P0 引擎栈
 python -m app.main --frames 300 --physics-solver warp --render-backend opencv --geometry silhouette
@@ -157,13 +163,14 @@ python scripts\make.py test
 
 ## 已实现 / 未实现（诚实声明）
 
-**已实现（mock 路径）**：数学层、封闭双面壳几何与 G1/G2、**柱面 UV 贴图（花纹保真）**、XPBD 物理、接触/释放/回弹、四态取景门禁、异步关键帧与 6 帧融合、HUD、三状态机、有限差分雅可比、LM/EKF、三闸门、许可门禁、注册表版本/TTL、**Web 产品壳（实时流/状态/换衣）**、12 个规格测试文件 + 3 个回归文件、300 帧主循环。
+**已实现（mock 路径）**：数学层、封闭双面壳几何与 G1/G2、**柱面 UV 贴图（花纹保真）**、XPBD 物理、接触/释放/回弹、四态取景门禁、异步关键帧与 6 帧融合、HUD、三状态机、有限差分雅可比、LM/EKF、三闸门、许可门禁、注册表版本/TTL、**Web 产品壳（实时流/状态/换衣）**、12 个规格测试文件 + 4 个回归文件、300 帧主循环。
 
 **P0–P4 引擎升级（2026-11，本机已验证）**：
 
 | 层 | 新后端 | 配置 / CLI | 状态 |
 |---|---|---|---|
 | 物理 | **Warp XPBD**（`physics/warp_solver.py`，CUDA 或 CPU，无权重无网络；可选 hash-grid 顶点自碰撞） | `physics.solver: warp` 或 `--physics-solver warp` | 已实现 + 测试 |
+| 物理 | **Newton VBD（实验）**（`physics/newton_solver.py`：VBD + DAT 刚软接触；双面壳按缝制面板塌缩；缺依赖自动回退） | `physics.solver: newton_vbd` + `pip install -e ".[newton]"` | 可选，已接入；544 顶点约 4.9 ms/步；软接触仍有少量穿透，默认不启用 |
 | 渲染 | **OpenCV 光栅化**（`render/cv2_render.py`，逐面 `fillConvexPoly` + AA，规避 fillPoly 的 even-odd 重叠空洞） | `render.backend: opencv` 或 `--render-backend opencv` | 已实现 + 测试 |
 | 感知 | **MediaPipe Body/Hand**（33→17 关节映射、D12 时序平滑、单目深度先验为已声明局限） | `mode: real/hybrid`（mediapipe 缺失自动回退 Stub） | 已实现 |
 | 关键帧 | **FASHN v1 REST 客户端**（提交+轮询+下载+差异掩膜；缺 API key 自动回退 Stub） | `keyframe.backend: fashn` + `FASHN_API_KEY` | 已实现 + mock-HTTP 测试 |
